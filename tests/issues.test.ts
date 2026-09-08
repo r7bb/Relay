@@ -101,10 +101,11 @@ describe('assignment', () => {
     const project = await createProject(owner, workspace.id);
     await addMember(owner, workspace.id, member, 'MEMBER');
 
-    const response = await request(
-      `/workspaces/${workspace.id}/projects/${project.id}/issues`,
-      { method: 'POST', payload: { title: 'Assigned', assigneeId: member.id }, actor: owner },
-    );
+    const response = await request(`/workspaces/${workspace.id}/projects/${project.id}/issues`, {
+      method: 'POST',
+      payload: { title: 'Assigned', assigneeId: member.id },
+      actor: owner,
+    });
 
     expect(response.statusCode).toBe(201);
     expect(response.json().issue.assigneeId).toBe(member.id);
@@ -120,10 +121,11 @@ describe('assignment', () => {
     const workspace = await createWorkspace(owner);
     const project = await createProject(owner, workspace.id);
 
-    const response = await request(
-      `/workspaces/${workspace.id}/projects/${project.id}/issues`,
-      { method: 'POST', payload: { title: 'Nope', assigneeId: outsider.id }, actor: owner },
-    );
+    const response = await request(`/workspaces/${workspace.id}/projects/${project.id}/issues`, {
+      method: 'POST',
+      payload: { title: 'Nope', assigneeId: outsider.id },
+      actor: owner,
+    });
 
     expect(response.statusCode).toBe(400);
     expect(response.json().error).toBe('bad_assignee');
@@ -207,8 +209,7 @@ describe('cascading deletes', () => {
     });
 
     expect(
-      (await request(`/workspaces/${workspace.id}`, { method: 'DELETE', actor: owner }))
-        .statusCode,
+      (await request(`/workspaces/${workspace.id}`, { method: 'DELETE', actor: owner })).statusCode,
     ).toBe(204);
 
     // The workspace is gone, so even its former owner is now a stranger to it.
@@ -234,8 +235,10 @@ describe('cascading deletes', () => {
       actor: owner,
     });
 
-    expect((await request(`/workspaces/${workspace.id}/issues/${issue.id}`, { actor: owner }))
-      .statusCode).toBe(404);
+    expect(
+      (await request(`/workspaces/${workspace.id}/issues/${issue.id}`, { actor: owner }))
+        .statusCode,
+    ).toBe(404);
     expect((await request(`/workspaces/${workspace.id}`, { actor: owner })).statusCode).toBe(200);
   });
 });

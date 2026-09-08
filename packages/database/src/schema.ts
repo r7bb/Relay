@@ -213,6 +213,41 @@ export const auditEvents = pgTable(
   (t) => [index('audit_events_workspace_created_idx').on(t.workspaceId, t.createdAt)],
 );
 
+/**
+ * Idempotency ledger.
+ *
+ * An offline client retries whatever is still in its queue when it reconnects,
+ * and it cannot tell a request that never arrived from one whose response was
+ * lost. Without this table, "create issue" retried after an ambiguous failure
+ * produces two issues.
+ *
+ * Each mutation carries a client-generated key. The first request inserts a
+ * `pending` row (the primary key is the lock), does the work, then stores its
+ * response. A replay finds the row and returns the stored response instead of
+ * re-applying.
+ */
+export const mutations = pgTable(
+  'mutations',
+  {
+    /** Client-generated. Unique across all users; `userId` is checked too so
+     * one account cannot probe or hijack another's keys. */
+    key: text('key').primaryKey(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    /**
+     * Hash of method + path + body. Reusing a key with a different payload is a
+     * client bug, and silently returning the old response would hide it.
+     */
+    fingerprint: text('fingerprint').notNull(),
+    status: text('status').notNull().default('pending'),
+    responseStatus: integer('response_status'),
+    responseBody: text('response_body'),
+    createdAt: createdAt(),
+  },
+  (t) => [index('mutations_user_created_idx').on(t.userId, t.createdAt)],
+);
+
 export const usersRelations = relations(users, ({ many }) => ({
   memberships: many(workspaceMembers),
   sessions: many(sessions),
@@ -259,3 +294,4 @@ export type Project = typeof projects.$inferSelect;
 export type Issue = typeof issues.$inferSelect;
 export type Comment = typeof comments.$inferSelect;
 export type AuditEvent = typeof auditEvents.$inferSelect;
+export type Mutation = typeof mutations.$inferSelect;

@@ -18,7 +18,10 @@ export function ErrorState({ message }: { message: string }) {
   return (
     <main className="mx-auto max-w-md px-6 py-24 text-center">
       <p className="text-sm text-slate-400">{message}</p>
-      <Link href="/workspaces" className="mt-4 inline-block text-sm text-indigo-400 hover:underline">
+      <Link
+        href="/workspaces"
+        className="mt-4 inline-block text-sm text-indigo-400 hover:underline"
+      >
         Back to workspaces
       </Link>
     </main>

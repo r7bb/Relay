@@ -144,7 +144,9 @@ export function useRealtime(workspaceId: string | null, location: string | null 
   // Location changes are sent on the existing socket rather than reconnecting.
   useEffect(() => {
     if (socketRef.current?.readyState === WebSocket.OPEN) {
-      socketRef.current.send(JSON.stringify({ type: 'location', location } satisfies ClientMessage));
+      socketRef.current.send(
+        JSON.stringify({ type: 'location', location } satisfies ClientMessage),
+      );
     }
   }, [location]);
 

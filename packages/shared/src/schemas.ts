@@ -79,6 +79,14 @@ export const updateProjectSchema = z
   .partial();
 
 export const createIssueSchema = z.object({
+  /**
+   * Optional client-generated id. An offline client must be able to name an
+   * issue the moment it is created -- to render it, reference it, and queue
+   * edits against it -- long before the server has seen it. Letting the client
+   * choose the uuid also makes create naturally idempotent: a replayed insert
+   * collides on the primary key instead of producing a second row.
+   */
+  id: uuid.optional(),
   title: z.string().min(1).max(200).trim(),
   description: z.string().max(20_000).trim().optional(),
   status: z.enum(ISSUE_STATUSES).default('TODO'),

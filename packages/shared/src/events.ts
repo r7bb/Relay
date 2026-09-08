@@ -14,9 +14,27 @@ export const PRESENCE_CHANNEL = 'relay_presence';
 
 /** Server -> client domain events. */
 export type ServerEvent =
-  | { type: 'issue.created'; workspaceId: string; projectId: string; issueId: string; actorId: string }
-  | { type: 'issue.updated'; workspaceId: string; projectId: string; issueId: string; actorId: string }
-  | { type: 'issue.deleted'; workspaceId: string; projectId: string; issueId: string; actorId: string }
+  | {
+      type: 'issue.created';
+      workspaceId: string;
+      projectId: string;
+      issueId: string;
+      actorId: string;
+    }
+  | {
+      type: 'issue.updated';
+      workspaceId: string;
+      projectId: string;
+      issueId: string;
+      actorId: string;
+    }
+  | {
+      type: 'issue.deleted';
+      workspaceId: string;
+      projectId: string;
+      issueId: string;
+      actorId: string;
+    }
   | { type: 'project.created'; workspaceId: string; projectId: string; actorId: string }
   | { type: 'project.deleted'; workspaceId: string; projectId: string; actorId: string }
   | { type: 'comment.created'; workspaceId: string; issueId: string; actorId: string }

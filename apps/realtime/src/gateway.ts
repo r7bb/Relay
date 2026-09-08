@@ -1,4 +1,4 @@
-import { SESSION_COOKIE, resolveSession } from '@relay/auth';
+import { resolveSession, SESSION_COOKIE } from '@relay/auth';
 import {
   type Database,
   findMembership,
@@ -6,7 +6,7 @@ import {
   subscribeToEvents,
   subscribeToPresence,
 } from '@relay/database';
-import type { ClientMessage, ServerEvent, ServerMessage } from '@relay/shared';
+import type { ClientMessage, PresenceMessage, ServerEvent, ServerMessage } from '@relay/shared';
 import type postgres from 'postgres';
 import { PresenceRegistry } from './presence.ts';
 
@@ -73,7 +73,11 @@ export async function createGateway(options: GatewayOptions) {
   /** Push the current presence roster for a workspace to everyone in it. */
   function broadcastPresence(workspaceId: string) {
     const users = presence.forWorkspace(workspaceId);
-    const message = JSON.stringify({ type: 'presence', workspaceId, users } satisfies ServerMessage);
+    const message = JSON.stringify({
+      type: 'presence',
+      workspaceId,
+      users,
+    } satisfies ServerMessage);
 
     for (const socket of sockets) {
       if (socket.data.workspaceId === workspaceId) socket.send(message);
@@ -147,45 +151,15 @@ export async function createGateway(options: GatewayOptions) {
           return send(socket, { type: 'error', message: 'Malformed message' });
         }
 
+        // One handler per message type, so adding a message kind does not make
+        // an already-long switch longer.
         switch (message.type) {
-          case 'subscribe': {
-            // Authorize on subscribe, not on connect: the cookie proves who you
-            // are, membership proves what you may watch.
-            const membership = await findMembership(db, message.workspaceId, socket.data.userId);
-
-            if (!membership) {
-              return send(socket, { type: 'error', message: 'Not a member of that workspace' });
-            }
-
-            const previous = socket.data.workspaceId;
-            socket.data.workspaceId = message.workspaceId;
-            socket.data.location = null;
-
-            await announce(socket);
-            send(socket, {
-              type: 'ready',
-              userId: socket.data.userId,
-              workspaceId: message.workspaceId,
-            });
-
-            broadcastPresence(message.workspaceId);
-            if (previous && previous !== message.workspaceId) broadcastPresence(previous);
-            return;
-          }
-
-          case 'location': {
-            if (!socket.data.workspaceId) return;
-            socket.data.location = message.location;
-            await announce(socket);
-            broadcastPresence(socket.data.workspaceId);
-            return;
-          }
-
-          case 'ping': {
-            // Refreshes this connection's TTL locally and on peers.
-            if (socket.data.workspaceId) await announce(socket);
-            return;
-          }
+          case 'subscribe':
+            return handleSubscribe(socket, message.workspaceId);
+          case 'location':
+            return handleLocation(socket, message.location);
+          case 'ping':
+            return handlePing(socket);
         }
       },
 
@@ -200,6 +174,45 @@ export async function createGateway(options: GatewayOptions) {
       },
     },
   });
+
+  /**
+   * Join a workspace feed.
+   *
+   * Authorization happens here rather than at connect time: the cookie proves
+   * who you are, membership proves what you may watch.
+   */
+  async function handleSubscribe(socket: Bun.ServerWebSocket<SocketData>, workspaceId: string) {
+    const membership = await findMembership(db, workspaceId, socket.data.userId);
+
+    if (!membership) {
+      return send(socket, { type: 'error', message: 'Not a member of that workspace' });
+    }
+
+    const previous = socket.data.workspaceId;
+    socket.data.workspaceId = workspaceId;
+    socket.data.location = null;
+
+    await announce(socket);
+    send(socket, { type: 'ready', userId: socket.data.userId, workspaceId });
+
+    broadcastPresence(workspaceId);
+    // Leaving one workspace for another changes both rosters.
+    if (previous && previous !== workspaceId) broadcastPresence(previous);
+  }
+
+  async function handleLocation(socket: Bun.ServerWebSocket<SocketData>, location: string | null) {
+    const { workspaceId } = socket.data;
+    if (!workspaceId) return;
+
+    socket.data.location = location;
+    await announce(socket);
+    broadcastPresence(workspaceId);
+  }
+
+  /** Refreshes this connection's TTL locally and on peers. */
+  async function handlePing(socket: Bun.ServerWebSocket<SocketData>) {
+    if (socket.data.workspaceId) await announce(socket);
+  }
 
   /** Record a connection locally and tell peers about it. */
   async function announce(socket: Bun.ServerWebSocket<SocketData>) {
@@ -229,25 +242,15 @@ export async function createGateway(options: GatewayOptions) {
 
   const unsubscribeEvents = await subscribeToEvents(listenClient, broadcastEvent);
 
-  const unsubscribePresence = await subscribeToPresence(listenClient, (message) => {
+  /** Apply a peer's presence delta and rebroadcast any roster it changed. */
+  function applyPresenceGossip(message: PresenceMessage) {
     // Our own gossip is already applied locally.
     if (message.instanceId === instanceId) return;
 
-    if (message.kind === 'bye') {
-      if (presence.removeInstance(message.instanceId)) {
-        for (const workspaceId of presence.workspaces()) broadcastPresence(workspaceId);
-      }
-      return;
-    }
+    for (const workspaceId of presence.apply(message)) broadcastPresence(workspaceId);
+  }
 
-    if (message.kind === 'remove') {
-      if (presence.remove(message.connectionId)) broadcastPresence(message.workspaceId);
-      return;
-    }
-
-    const changed = presence.upsert({ ...message, instanceId: message.instanceId, lastSeenAt: Date.now() });
-    if (changed) broadcastPresence(message.workspaceId);
-  });
+  const unsubscribePresence = await subscribeToPresence(listenClient, applyPresenceGossip);
 
   const reannounce = setInterval(() => {
     for (const socket of sockets) void announce(socket);

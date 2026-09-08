@@ -1,9 +1,8 @@
-import { SESSION_COOKIE } from '@relay/auth';
+import { type AuthenticatedUser, resolveSession, SESSION_COOKIE } from '@relay/auth';
 import { type Database, findMembership } from '@relay/database';
-import { type Permission, type Role, can } from '@relay/shared';
+import { can, type Permission, type Role } from '@relay/shared';
 import type { FastifyReply, FastifyRequest, preHandlerHookHandler } from 'fastify';
 import { ApiError } from '../errors.ts';
-import { type AuthenticatedUser, resolveSession } from '@relay/auth';
 
 declare module 'fastify' {
   interface FastifyRequest {

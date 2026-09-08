@@ -52,11 +52,7 @@ const READ_ONLY: readonly Permission[] = [
   'comment:read',
 ];
 
-const GUEST: readonly Permission[] = [
-  ...READ_ONLY,
-  'comment:create',
-  'comment:delete_own',
-];
+const GUEST: readonly Permission[] = [...READ_ONLY, 'comment:create', 'comment:delete_own'];
 
 const MEMBER: readonly Permission[] = [
   ...GUEST,

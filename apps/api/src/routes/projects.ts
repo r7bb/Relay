@@ -1,7 +1,7 @@
 import {
+  auditEvents,
   type Database,
   type Executor,
-  auditEvents,
   issues,
   projects,
   publishEvent,
@@ -10,7 +10,12 @@ import { createProjectSchema, deriveProjectKey, updateProjectSchema } from '@rel
 import { and, count, eq, sql } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
 import { ApiError } from '../errors.ts';
-import { currentMembership, currentUser, requireAuth, requireMembership } from '../plugins/authz.ts';
+import {
+  currentMembership,
+  currentUser,
+  requireAuth,
+  requireMembership,
+} from '../plugins/authz.ts';
 import { parse } from '../validate.ts';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -47,7 +52,10 @@ async function availableKey(db: Executor, workspaceId: string, base: string): Pr
     if (!taken) return candidate;
   }
 
-  throw ApiError.conflict('Could not derive a unique project key; please supply one', 'key_exhausted');
+  throw ApiError.conflict(
+    'Could not derive a unique project key; please supply one',
+    'key_exhausted',
+  );
 }
 
 export async function projectRoutes(app: FastifyInstance, opts: { db: Database }) {
@@ -101,7 +109,8 @@ export async function projectRoutes(app: FastifyInstance, opts: { db: Database }
       const input = parse(createProjectSchema, request.body);
 
       const project = await db.transaction(async (tx) => {
-        const key = input.key ?? (await availableKey(tx, workspaceId, deriveProjectKey(input.name)));
+        const key =
+          input.key ?? (await availableKey(tx, workspaceId, deriveProjectKey(input.name)));
 
         const [created] = await tx
           .insert(projects)

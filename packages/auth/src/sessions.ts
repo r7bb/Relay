@@ -1,6 +1,6 @@
-import { generateSessionToken, hashSessionToken, sessionExpiry } from './tokens.ts';
 import { type Executor, sessions, users } from '@relay/database';
 import { and, eq, gt, lt } from 'drizzle-orm';
+import { generateSessionToken, hashSessionToken, sessionExpiry } from './tokens.ts';
 
 export type AuthenticatedUser = {
   id: string;
@@ -53,10 +53,7 @@ export async function resolveSession(
   if (!row) return null;
 
   if (Date.now() - row.lastUsedAt.getTime() > LAST_USED_REFRESH_MS) {
-    await db
-      .update(sessions)
-      .set({ lastUsedAt: new Date() })
-      .where(eq(sessions.id, row.sessionId));
+    await db.update(sessions).set({ lastUsedAt: new Date() }).where(eq(sessions.id, row.sessionId));
   }
 
   return { id: row.id, email: row.email, name: row.name };

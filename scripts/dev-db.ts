@@ -33,7 +33,9 @@ const DATABASE = 'relay';
 function bin(name: string): string {
   const path = pgBin(name);
   if (!path) {
-    throw new Error(`Could not locate "${name}". Run \`bun install\` to fetch the Postgres binaries.`);
+    throw new Error(
+      `Could not locate "${name}". Run \`bun install\` to fetch the Postgres binaries.`,
+    );
   }
   return path;
 }
@@ -77,8 +79,10 @@ async function provision() {
   try {
     await writeFile(pwFile, PASSWORD, { mode: 0o600 });
     await run('initdb', [
-      '-D', DATA_DIR,
-      '-U', USER,
+      '-D',
+      DATA_DIR,
+      '-U',
+      USER,
       `--pwfile=${pwFile}`,
       '--auth-host=scram-sha-256',
       '--auth-local=trust',
@@ -152,7 +156,9 @@ const command = process.argv[2] ?? 'start';
 const action = commands[command];
 
 if (!action) {
-  console.error(`Unknown command "${command}". Expected one of: ${Object.keys(commands).join(', ')}`);
+  console.error(
+    `Unknown command "${command}". Expected one of: ${Object.keys(commands).join(', ')}`,
+  );
   process.exit(1);
 }
 

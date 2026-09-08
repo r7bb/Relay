@@ -1,4 +1,4 @@
-import type { PresenceUser } from '@relay/shared';
+import type { PresenceMessage, PresenceUser } from '@relay/shared';
 
 /**
  * Who is currently connected, per workspace.
@@ -64,6 +64,31 @@ export class PresenceRegistry {
       }
     }
     return changed;
+  }
+
+  /**
+   * Apply a delta gossiped by another gateway instance.
+   *
+   * Returns the workspaces whose roster actually changed, so the caller can
+   * broadcast exactly those. Keeping the state transition here rather than in
+   * the gateway means presence has one owner, and it stays unit-testable
+   * without a socket.
+   */
+  apply(message: PresenceMessage, now = Date.now()): string[] {
+    switch (message.kind) {
+      case 'bye': {
+        // A departing instance can empty several rosters at once, and its
+        // entries are gone by the time we look, so report all of them.
+        const affected = this.workspaces();
+        return this.removeInstance(message.instanceId) ? affected : [];
+      }
+
+      case 'remove':
+        return this.remove(message.connectionId) ? [message.workspaceId] : [];
+
+      case 'upsert':
+        return this.upsert({ ...message, lastSeenAt: now }) ? [message.workspaceId] : [];
+    }
   }
 
   sweep(now = Date.now()): string[] {

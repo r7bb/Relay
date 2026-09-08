@@ -2,10 +2,10 @@ import { drizzle } from 'drizzle-orm/postgres-js';
 import postgres from 'postgres';
 import * as schema from './schema.ts';
 
-export * from './schema.ts';
-export * from './queries.ts';
 export * from './events.ts';
 export * from './presence-bus.ts';
+export * from './queries.ts';
+export * from './schema.ts';
 export { schema };
 
 export type Database = ReturnType<typeof createDatabase>['db'];

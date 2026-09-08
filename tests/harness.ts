@@ -10,13 +10,14 @@
  */
 import { buildApp } from '@relay/api/app';
 import { loadEnv } from '@relay/api/env';
-import { type Database, createDatabase } from '@relay/database';
+import { createDatabase, type Database } from '@relay/database';
 import { runMigrations } from '@relay/database/migrate';
 import postgres from 'postgres';
 
 const ADMIN_URL = process.env.TEST_ADMIN_URL ?? 'postgres://relay:relay@localhost:5433/postgres';
 const TEST_DB = 'relay_test';
-export const TEST_URL = process.env.TEST_DATABASE_URL ?? `postgres://relay:relay@localhost:5433/${TEST_DB}`;
+export const TEST_URL =
+  process.env.TEST_DATABASE_URL ?? `postgres://relay:relay@localhost:5433/${TEST_DB}`;
 
 /** Every table that holds test state, in an order safe for `TRUNCATE CASCADE`. */
 const TABLES = [
@@ -121,6 +122,7 @@ type RequestOptions = {
   method?: 'GET' | 'POST' | 'PATCH' | 'DELETE';
   payload?: unknown;
   actor?: Actor;
+  headers?: Record<string, string>;
 };
 
 /** Thin wrapper over `app.inject` that attaches the actor's cookie. */
@@ -131,7 +133,10 @@ export async function request(url: string, options: RequestOptions = {}) {
     method: options.method ?? 'GET',
     url,
     payload: options.payload as never,
-    headers: options.actor ? { cookie: options.actor.cookie } : {},
+    headers: {
+      ...(options.actor ? { cookie: options.actor.cookie } : {}),
+      ...options.headers,
+    },
   });
 }
 

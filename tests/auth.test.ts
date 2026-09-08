@@ -1,5 +1,5 @@
-import { SESSION_COOKIE } from '@relay/auth';
 import { afterAll, beforeEach, describe, expect, test } from 'bun:test';
+import { SESSION_COOKIE } from '@relay/auth';
 import { closeHarness, createActor, request, resetDatabase } from './harness.ts';
 
 beforeEach(resetDatabase);

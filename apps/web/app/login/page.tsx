@@ -3,7 +3,7 @@
 import { useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'next/navigation';
 import { type FormEvent, useState } from 'react';
-import { ApiError, type Me, api } from '../../lib/api.ts';
+import { ApiError, api, type Me } from '../../lib/api.ts';
 
 type Mode = 'login' | 'register';
 

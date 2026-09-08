@@ -20,12 +20,15 @@ export class ApiError extends Error {
  */
 export async function api<T>(
   path: string,
-  options: { method?: string; body?: unknown } = {},
+  options: { method?: string; body?: unknown; headers?: Record<string, string> } = {},
 ): Promise<T> {
   const response = await fetch(`${BASE_URL}${path}`, {
     method: options.method ?? 'GET',
     credentials: 'include',
-    headers: options.body ? { 'content-type': 'application/json' } : {},
+    headers: {
+      ...(options.body ? { 'content-type': 'application/json' } : {}),
+      ...options.headers,
+    },
     body: options.body ? JSON.stringify(options.body) : undefined,
   });
 

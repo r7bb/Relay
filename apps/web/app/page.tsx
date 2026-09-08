@@ -3,7 +3,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { useRouter } from 'next/navigation';
 import { useEffect } from 'react';
-import { type Me, api } from '../lib/api.ts';
+import { api, type Me } from '../lib/api.ts';
 
 /** Entry point: bounce to the workspace list or to sign-in. */
 export default function Home() {

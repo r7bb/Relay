@@ -18,8 +18,7 @@ import {
 import { type IssuePriority, type IssueStatus, type Role, slugify } from '@relay/shared';
 import { eq, inArray } from 'drizzle-orm';
 
-const DATABASE_URL =
-  process.env.DATABASE_URL ?? 'postgres://relay:relay@localhost:5433/relay';
+const DATABASE_URL = process.env.DATABASE_URL ?? 'postgres://relay:relay@localhost:5433/relay';
 const PASSWORD = 'relay-demo-password';
 
 const PEOPLE: { email: string; name: string; role: Role }[] = [
@@ -41,11 +40,31 @@ const PROJECTS: {
     name: 'Web App',
     description: 'The Relay client.',
     issues: [
-      { title: 'Fix OAuth refresh-token bug', status: 'TODO', priority: 'URGENT', assignee: 'alex@relay.dev' },
-      { title: 'Reproduce Safari authentication issue', status: 'TODO', priority: 'HIGH', assignee: 'john@relay.dev' },
-      { title: 'Search across issues and documents', status: 'IN_PROGRESS', priority: 'MEDIUM', assignee: 'sarah@relay.dev' },
+      {
+        title: 'Fix OAuth refresh-token bug',
+        status: 'TODO',
+        priority: 'URGENT',
+        assignee: 'alex@relay.dev',
+      },
+      {
+        title: 'Reproduce Safari authentication issue',
+        status: 'TODO',
+        priority: 'HIGH',
+        assignee: 'john@relay.dev',
+      },
+      {
+        title: 'Search across issues and documents',
+        status: 'IN_PROGRESS',
+        priority: 'MEDIUM',
+        assignee: 'sarah@relay.dev',
+      },
       { title: 'Keyboard shortcuts for the board', status: 'IN_PROGRESS', priority: 'LOW' },
-      { title: 'Billing settings page', status: 'IN_REVIEW', priority: 'MEDIUM', assignee: 'alex@relay.dev' },
+      {
+        title: 'Billing settings page',
+        status: 'IN_REVIEW',
+        priority: 'MEDIUM',
+        assignee: 'alex@relay.dev',
+      },
       { title: 'Dark mode', status: 'DONE', priority: 'LOW', assignee: 'sarah@relay.dev' },
     ],
   },
@@ -54,9 +73,19 @@ const PROJECTS: {
     name: 'Backend',
     description: 'Fastify service and Postgres schema.',
     issues: [
-      { title: 'Rate limit the auth endpoints', status: 'TODO', priority: 'HIGH', assignee: 'sarah@relay.dev' },
+      {
+        title: 'Rate limit the auth endpoints',
+        status: 'TODO',
+        priority: 'HIGH',
+        assignee: 'sarah@relay.dev',
+      },
       { title: 'Audit log retention policy', status: 'TODO', priority: 'NONE' },
-      { title: 'Cursor pagination for issue lists', status: 'IN_PROGRESS', priority: 'MEDIUM', assignee: 'john@relay.dev' },
+      {
+        title: 'Cursor pagination for issue lists',
+        status: 'IN_PROGRESS',
+        priority: 'MEDIUM',
+        assignee: 'john@relay.dev',
+      },
       { title: 'Session cleanup job', status: 'DONE', priority: 'LOW' },
     ],
   },
@@ -128,7 +157,9 @@ try {
     issueCount += spec.issues.length;
   }
 
-  console.log(`Seeded "${WORKSPACE_NAME}": ${PEOPLE.length} users, ${PROJECTS.length} projects, ${issueCount} issues.`);
+  console.log(
+    `Seeded "${WORKSPACE_NAME}": ${PEOPLE.length} users, ${PROJECTS.length} projects, ${issueCount} issues.`,
+  );
   console.log(`Sign in as any of ${emails.join(', ')} with password "${PASSWORD}".`);
 } finally {
   await close();

@@ -1,7 +1,7 @@
 import {
+  auditEvents,
   type Database,
   type Executor,
-  auditEvents,
   issues,
   projects,
   publishEvent,
@@ -12,7 +12,13 @@ import { createIssueSchema, listIssuesQuerySchema, updateIssueSchema } from '@re
 import { and, desc, eq, sql } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
 import { ApiError } from '../errors.ts';
-import { currentMembership, currentUser, requireAuth, requireMembership } from '../plugins/authz.ts';
+import {
+  currentMembership,
+  currentUser,
+  requireAuth,
+  requireMembership,
+} from '../plugins/authz.ts';
+import { withIdempotency } from '../plugins/idempotency.ts';
 import { parse } from '../validate.ts';
 import { loadProject } from './projects.ts';
 
@@ -41,14 +47,12 @@ async function assertAssignable(db: Executor, workspaceId: string, assigneeId: s
     .select({ userId: workspaceMembers.userId })
     .from(workspaceMembers)
     .where(
-      and(
-        eq(workspaceMembers.workspaceId, workspaceId),
-        eq(workspaceMembers.userId, assigneeId),
-      ),
+      and(eq(workspaceMembers.workspaceId, workspaceId), eq(workspaceMembers.userId, assigneeId)),
     )
     .limit(1);
 
-  if (!member) throw ApiError.badRequest('Assignee is not a member of this workspace', 'bad_assignee');
+  if (!member)
+    throw ApiError.badRequest('Assignee is not a member of this workspace', 'bad_assignee');
 }
 
 export async function issueRoutes(app: FastifyInstance, opts: { db: Database }) {
@@ -71,6 +75,9 @@ export async function issueRoutes(app: FastifyInstance, opts: { db: Database }) 
       const rows = await db
         .select({
           id: issues.id,
+          // The offline store keys rows by project, so the client needs this
+          // even though it is implied by the request path.
+          projectId: issues.projectId,
           number: issues.number,
           title: issues.title,
           status: issues.status,
@@ -106,57 +113,65 @@ export async function issueRoutes(app: FastifyInstance, opts: { db: Database }) 
       await loadProject(db, workspaceId, projectId);
       if (input.assigneeId) await assertAssignable(db, workspaceId, input.assigneeId);
 
-      const issue = await db.transaction(async (tx) => {
-        /*
-         * Reserve the next issue number by incrementing the counter in place.
-         * `UPDATE ... RETURNING` takes a row-level lock, so concurrent creates
-         * in the same project queue behind each other and each gets a distinct
-         * number. Reading the max issue number and adding one would race.
-         */
-        const [bumped] = await tx
-          .update(projects)
-          .set({ issueCounter: sql`${projects.issueCounter} + 1` })
-          .where(and(eq(projects.id, projectId), eq(projects.workspaceId, workspaceId)))
-          .returning({ number: projects.issueCounter, key: projects.key });
+      return withIdempotency(db, request, reply, 201, async () => {
+        const issue = await db.transaction(async (tx) => {
+          /*
+           * Reserve the next issue number by incrementing the counter in place.
+           * `UPDATE ... RETURNING` takes a row-level lock, so concurrent creates
+           * in the same project queue behind each other and each gets a distinct
+           * number. Reading the max issue number and adding one would race.
+           */
+          const [bumped] = await tx
+            .update(projects)
+            .set({ issueCounter: sql`${projects.issueCounter} + 1` })
+            .where(and(eq(projects.id, projectId), eq(projects.workspaceId, workspaceId)))
+            .returning({ number: projects.issueCounter, key: projects.key });
 
-        if (!bumped) throw ApiError.notFound('Project not found');
+          if (!bumped) throw ApiError.notFound('Project not found');
 
-        const [created] = await tx
-          .insert(issues)
-          .values({
+          const [created] = await tx
+            .insert(issues)
+            .values({
+              // Falls back to the database default when the client did not
+              // choose one.
+              ...(input.id ? { id: input.id } : {}),
+              workspaceId,
+              projectId,
+              number: bumped.number,
+              title: input.title,
+              description: input.description ?? null,
+              status: input.status,
+              priority: input.priority,
+              assigneeId: input.assigneeId ?? null,
+              createdBy: user.id,
+            })
+            .returning();
+
+          await tx.insert(auditEvents).values({
             workspaceId,
-            projectId,
-            number: bumped.number,
-            title: input.title,
-            description: input.description ?? null,
-            status: input.status,
-            priority: input.priority,
-            assigneeId: input.assigneeId ?? null,
-            createdBy: user.id,
-          })
-          .returning();
+            actorId: user.id,
+            entityType: 'issue',
+            entityId: created!.id,
+            eventType: 'issue.created',
+            payload: JSON.stringify({
+              key: `${bumped.key}-${bumped.number}`,
+              title: created!.title,
+            }),
+          });
 
-        await tx.insert(auditEvents).values({
-          workspaceId,
-          actorId: user.id,
-          entityType: 'issue',
-          entityId: created!.id,
-          eventType: 'issue.created',
-          payload: JSON.stringify({ key: `${bumped.key}-${bumped.number}`, title: created!.title }),
+          return { ...created!, key: `${bumped.key}-${bumped.number}` };
         });
 
-        return { ...created!, key: `${bumped.key}-${bumped.number}` };
-      });
+        await publishEvent(db, {
+          type: 'issue.created',
+          workspaceId,
+          projectId,
+          issueId: issue.id,
+          actorId: user.id,
+        });
 
-      await publishEvent(db, {
-        type: 'issue.created',
-        workspaceId,
-        projectId,
-        issueId: issue.id,
-        actorId: user.id,
+        return { issue };
       });
-
-      return reply.status(201).send({ issue });
     },
   );
 

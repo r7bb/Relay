@@ -10,7 +10,6 @@
  */
 import { hashPassword } from '@relay/auth';
 import { createDatabase, users, workspaceMembers, workspaces } from '@relay/database';
-import { eq } from 'drizzle-orm';
 
 const [emailArg, nameArg, passwordArg] = process.argv.slice(2);
 
@@ -51,7 +50,9 @@ try {
       });
   }
 
-  console.log(`${user!.name} <${user!.email}> is now OWNER of ${allWorkspaces.length} workspace(s):`);
+  console.log(
+    `${user!.name} <${user!.email}> is now OWNER of ${allWorkspaces.length} workspace(s):`,
+  );
   for (const workspace of allWorkspaces) console.log(`  - ${workspace.name}`);
   console.log(`\nPassword: ${password}`);
 } finally {

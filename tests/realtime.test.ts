@@ -1,10 +1,9 @@
+import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'bun:test';
 import { createGateway } from '@relay/realtime/gateway';
 import type { ServerMessage } from '@relay/shared';
-import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'bun:test';
 import postgres from 'postgres';
 import {
   type Actor,
-  TEST_URL,
   addMember,
   closeHarness,
   createActor,
@@ -13,6 +12,7 @@ import {
   getHarness,
   request,
   resetDatabase,
+  TEST_URL,
 } from './harness.ts';
 
 /**
@@ -89,16 +89,12 @@ class TestClient {
       await Bun.sleep(25);
     }
 
-    throw new Error(
-      `Timed out. Received: ${JSON.stringify(this.messages.map((m) => m.type))}`,
-    );
+    throw new Error(`Timed out. Received: ${JSON.stringify(this.messages.map((m) => m.type))}`);
   }
 
   async subscribe(workspaceId: string) {
     this.send({ type: 'subscribe', workspaceId });
-    return this.waitFor(
-      (m): m is Extract<ServerMessage, { type: 'ready' }> => m.type === 'ready',
-    );
+    return this.waitFor((m): m is Extract<ServerMessage, { type: 'ready' }> => m.type === 'ready');
   }
 
   close() {
@@ -106,8 +102,10 @@ class TestClient {
   }
 }
 
-const isEvent = (type: string) => (m: ServerMessage): m is Extract<ServerMessage, { type: 'event' }> =>
-  m.type === 'event' && m.event.type === type;
+const isEvent =
+  (type: string) =>
+  (m: ServerMessage): m is Extract<ServerMessage, { type: 'event' }> =>
+    m.type === 'event' && m.event.type === type;
 
 const isError = (m: ServerMessage): m is Extract<ServerMessage, { type: 'error' }> =>
   m.type === 'error';
@@ -169,10 +167,11 @@ describe('event fan-out', () => {
     const client = await TestClient.connect(owner);
     await client.subscribe(workspace.id);
 
-    const created = await request(
-      `/workspaces/${workspace.id}/projects/${project.id}/issues`,
-      { method: 'POST', payload: { title: 'Realtime please' }, actor: owner },
-    );
+    const created = await request(`/workspaces/${workspace.id}/projects/${project.id}/issues`, {
+      method: 'POST',
+      payload: { title: 'Realtime please' },
+      actor: owner,
+    });
     expect(created.statusCode).toBe(201);
 
     const message = await client.waitFor(isEvent('issue.created'));
@@ -286,10 +285,11 @@ describe('event fan-out', () => {
     const client = await TestClient.connect(owner);
     await client.subscribe(workspace.id);
 
-    const refused = await request(
-      `/workspaces/${workspace.id}/projects/${project.id}/issues`,
-      { method: 'POST', payload: { title: 'Not allowed' }, actor: guest },
-    );
+    const refused = await request(`/workspaces/${workspace.id}/projects/${project.id}/issues`, {
+      method: 'POST',
+      payload: { title: 'Not allowed' },
+      actor: guest,
+    });
     expect(refused.statusCode).toBe(403);
 
     // Follow with a write that *is* allowed; when its event arrives we know the

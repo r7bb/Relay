@@ -1,7 +1,8 @@
 # Relay
 
-A multi-tenant collaborative workspace — workspaces, projects and issues, with
-role-based access control and live updates over WebSockets.
+A local-first collaborative workspace — workspaces, projects and issues, with
+role-based access control, live updates over WebSockets, and a board that keeps
+working with the network switched off.
 
 ![Relay board](docs/screenshots/04-board.png)
 
@@ -90,6 +91,32 @@ request with `403` even if you send it by hand with `curl`.
 
 ![Guest board](docs/screenshots/07-guest-board.png)
 
+### Working offline
+
+Open a board, then cut the network (DevTools → Network → Offline, or turn off
+Wi-Fi). The board keeps working — it renders from IndexedDB rather than fetching.
+
+![Offline banner](docs/screenshots/08-offline-banner.png)
+
+Create issues with no connection. They appear immediately, outlined in amber and
+marked **Unsynced**, and the header counts what is waiting.
+
+![Unsynced issues](docs/screenshots/09-offline-unsynced.png)
+
+Reconnect and the queue drains by itself. The placeholder keys become real
+`REL-7` / `REL-8`, the amber outlines clear, and anyone else on the board sees
+the issues appear.
+
+![After reconnect](docs/screenshots/11-after-reconnect.png)
+
+**Scope, honestly:** this is offline for the board's *data*. The mutation queue
+and the issue store live in IndexedDB and survive a reload — there is
+[a test](tests/sync.test.ts) that constructs a fresh engine over the same
+storage and flushes the queue it finds. What is *not* done is offline delivery
+of the app itself: a cold page load with no network fails, because there is no
+service worker caching the app shell, and routes other than the board still
+fetch normally. That is the next piece of work, not a claim being made here.
+
 ---
 
 ## Commands
@@ -107,6 +134,8 @@ request with `403` even if you send it by hand with `curl`.
 | `bun run dev:web`       | Next.js client on :3000                       |
 | `bun test`              | Full suite against a real Postgres            |
 | `bun run typecheck`     | Typecheck every package                       |
+| `bun run lint`          | Biome lint + format check                     |
+| `bun run lint:fix`      | Apply safe lint and format fixes              |
 
 Bootstrap yourself into a fresh database:
 
@@ -124,7 +153,11 @@ same port; skip `db:start` in that case.
 ```
         ┌──────────────┐
         │   Next.js    │  React 19 · TanStack Query
-        │    :3000     │  optimistic board · presence
+        │    :3000     │  presence · offline board
+        └──┬────────┬──┘
+           │  reads/writes go to IndexedDB first
+        ┌──▼───────────┐
+        │  sync engine │  durable mutation queue
         └──┬────────┬──┘
    REST +  │        │  WebSocket
    cookie  │        │  (same cookie)
@@ -151,6 +184,7 @@ packages/
   shared/       Permission matrix, domain enums, wire contracts
   database/     Drizzle schema, migrations, event bus
   auth/         Argon2 hashing, sessions
+  sync/         Offline store, mutation queue, reconciliation
 scripts/        Dev database lifecycle, seeding, admin bootstrap
 tests/          Integration tests against real Postgres
 docs/           Screenshots
@@ -243,6 +277,55 @@ insert transaction, taking a row-level lock. A test fires 25 simultaneous
 creates and asserts the results are exactly `1..25` — contiguous, proving
 nothing collided *and* nothing was skipped.
 
+### The local store is the source of truth for the UI
+
+The board reads from IndexedDB and writes to it, then reconciles. Nothing in the
+render path awaits the network, which is what makes it work offline rather than
+merely degrade gracefully.
+
+The inversion that makes this safe: **the local store is authoritative for the
+UI, the server is authoritative for the world.** Reconciliation overwrites local
+rows with server state — except rows with unflushed mutations, which keep their
+local values, because discarding them would silently destroy work the user can
+see on screen. There is
+[a test](tests/sync.test.ts) for exactly that.
+
+The engine talks to a
+[`StorageAdapter`](packages/sync/src/storage.ts) and a `SyncTransport` rather
+than to IndexedDB and `fetch`, so the interesting logic — queue ordering, retry
+policy, convergence — is unit-testable with no browser and no server.
+
+### Offline writes need exactly-once delivery, not at-least-once
+
+A queued mutation that is replayed after an ambiguous failure — request sent,
+response lost — must not apply twice. "Create issue" retried naively produces
+two issues.
+
+Two mechanisms together give exactly-once:
+
+**The client names the row.** An offline create generates its own uuid, so the
+issue can be rendered, referenced and edited before the server has heard of it.
+A replayed insert then collides on the primary key instead of producing a second
+row.
+
+**The server keeps an idempotency ledger.** Each mutation carries a stable key;
+[`withIdempotency`](apps/api/src/plugins/idempotency.ts) claims it with an
+atomic `INSERT ... ON CONFLICT DO NOTHING`, and a replay returns the stored
+response instead of re-running the handler. Reusing a key with a *different*
+body is a 409 rather than a silent replay, because that is a client bug worth
+surfacing. A failed attempt releases its key, so a transient error does not
+poison it permanently.
+
+### A poison message must not wedge the queue
+
+The queue flushes in order and stops at the first transient failure — a create
+that has not landed must not be overtaken by an edit against it.
+
+But a 4xx means the server understood and refused, and retrying forever would
+block every later mutation behind it. Those are dropped and the local change
+rolled back. 408 and 429 are explicitly treated as transient, since they mean
+"later", not "no".
+
 ### Sessions are opaque, not JWTs
 
 Session lookup costs one indexed read per request. In exchange, signing out
@@ -264,7 +347,7 @@ body.
 
 ## Testing
 
-**58 tests** against a real Postgres rather than mocks. The behaviour under test
+**87 tests** against a real Postgres rather than mocks. The behaviour under test
 — unique constraints, cascades, row locks, transactional `NOTIFY` — is behaviour
 the database provides, so a fake would only prove the fake works.
 
@@ -279,6 +362,8 @@ bun test
 | `authorization.test.ts` | Cross-tenant access, role boundaries, escalation, last owner     |
 | `issues.test.ts`        | Numbering under concurrency, assignment, cascades                |
 | `realtime.test.ts`      | Socket auth, fan-out, cross-workspace isolation, presence        |
+| `sync.test.ts`          | Offline queue, retry, poison messages, convergence               |
+| `idempotency.test.ts`   | Exactly-once mutations, key misuse, client-generated ids         |
 
 The ones worth reading are adversarial: pasting another tenant's project id into
 a URL you *do* have access to, an admin trying to promote itself past its
@@ -295,19 +380,21 @@ ceiling, a socket subscribing to a workspace it doesn't belong to, and the
 - Session auth (Argon2id, opaque server-side sessions)
 - Projects and issues with per-project keys, comments
 - Realtime updates and presence over WebSockets
-- Next.js client with optimistic board updates
-- 58 tests, CI, typechecking
+- Offline-first board: IndexedDB store, durable mutation queue, exactly-once sync
+- Next.js client with optimistic updates
+- 87 tests, CI, linting, typechecking
 
 **Next**
 
-- Offline persistence in IndexedDB with a sync queue
-- CRDT documents (Yjs) and convergence tests
+- Service worker so the app shell loads with no network
+- CRDT documents (Yjs) for collaborative text
 - Background workers, notifications, search, file uploads
 - Load testing and OpenTelemetry
 
-The optimistic board update and the id-only event design are both written in the
-shape the offline layer needs — apply locally, reconcile later — so the client
-doesn't need rewriting when the sync queue lands.
+Collaborative text is the one remaining piece that genuinely needs CRDTs. Issue
+fields converge fine under last-write-wins per field — two people editing
+different fields of the same issue both keep their change — but concurrent edits
+to the *same* paragraph do not, which is what Yjs is for.
 
 ---
 

@@ -1,13 +1,18 @@
-import { SESSION_COOKIE, hashPassword, verifyPassword } from '@relay/auth';
+import { randomBytes } from 'node:crypto';
+import {
+  createSession,
+  hashPassword,
+  revokeSession,
+  SESSION_COOKIE,
+  verifyPassword,
+} from '@relay/auth';
 import { type Database, users } from '@relay/database';
 import { loginSchema, registerSchema } from '@relay/shared';
-import { randomBytes } from 'node:crypto';
 import { eq } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
 import type { Env } from '../env.ts';
 import { ApiError } from '../errors.ts';
 import { currentUser, requireAuth } from '../plugins/authz.ts';
-import { createSession, revokeSession } from '@relay/auth';
 import { parse } from '../validate.ts';
 
 export async function authRoutes(app: FastifyInstance, opts: { db: Database; env: Env }) {

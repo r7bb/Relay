@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { type FormEvent, useState } from 'react';
 import { RoleBadge } from '../../components/ui.tsx';
-import { type Me, type WorkspaceSummary, api } from '../../lib/api.ts';
+import { api, type Me, type WorkspaceSummary } from '../../lib/api.ts';
 
 export default function WorkspacesPage() {
   const router = useRouter();
@@ -55,7 +55,9 @@ export default function WorkspacesPage() {
       <header className="flex items-baseline justify-between">
         <div>
           <h1 className="text-xl font-semibold tracking-tight text-white">Workspaces</h1>
-          {me.data && <p className="mt-1 text-sm text-slate-400">Signed in as {me.data.user.name}</p>}
+          {me.data && (
+            <p className="mt-1 text-sm text-slate-400">Signed in as {me.data.user.name}</p>
+          )}
         </div>
 
         <button

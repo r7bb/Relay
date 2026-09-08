@@ -42,4 +42,8 @@ for (const dir of nativeLibDirs()) {
   }
 }
 
-console.log(created > 0 ? `fix-pg-dylibs: linked ${created} shared libraries` : 'fix-pg-dylibs: nothing to do');
+console.log(
+  created > 0
+    ? `fix-pg-dylibs: linked ${created} shared libraries`
+    : 'fix-pg-dylibs: nothing to do',
+);

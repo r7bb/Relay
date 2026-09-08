@@ -1,9 +1,14 @@
-import { type Database, comments, issues, publishEvent, users } from '@relay/database';
+import { comments, type Database, issues, publishEvent, users } from '@relay/database';
 import { can, createCommentSchema } from '@relay/shared';
 import { and, asc, eq } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
 import { ApiError } from '../errors.ts';
-import { currentMembership, currentUser, requireAuth, requireMembership } from '../plugins/authz.ts';
+import {
+  currentMembership,
+  currentUser,
+  requireAuth,
+  requireMembership,
+} from '../plugins/authz.ts';
 import { parse } from '../validate.ts';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -100,9 +105,7 @@ export async function commentRoutes(app: FastifyInstance, opts: { db: Database }
       if (!comment) throw ApiError.notFound('Comment not found');
 
       const isAuthor = comment.authorId === user.id;
-      const allowed = isAuthor
-        ? can(role, 'comment:delete_own')
-        : can(role, 'comment:delete_any');
+      const allowed = isAuthor ? can(role, 'comment:delete_own') : can(role, 'comment:delete_any');
 
       if (!allowed) throw ApiError.forbidden();
 

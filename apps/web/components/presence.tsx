@@ -49,11 +49,7 @@ export function PresenceBar({
         {users.map((user) => (
           <span
             key={user.userId}
-            title={
-              here && user.location === here
-                ? `${user.name} — viewing this board`
-                : user.name
-            }
+            title={here && user.location === here ? `${user.name} — viewing this board` : user.name}
             className={[
               'grid h-7 w-7 place-items-center rounded-full text-[10px] font-semibold text-white ring-2',
               colorFor(user.userId),

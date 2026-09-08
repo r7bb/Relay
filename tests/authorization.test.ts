@@ -57,10 +57,9 @@ describe('tenant isolation', () => {
     const betaWorkspace = await createWorkspace(bob, 'Beta');
     const betaProject = await createProject(bob, betaWorkspace.id);
 
-    const response = await request(
-      `/workspaces/${alphaWorkspace.id}/projects/${betaProject.id}`,
-      { actor: alice },
-    );
+    const response = await request(`/workspaces/${alphaWorkspace.id}/projects/${betaProject.id}`, {
+      actor: alice,
+    });
 
     expect(response.statusCode).toBe(404);
   });
@@ -118,16 +117,16 @@ describe('role boundaries', () => {
     const project = await createProject(owner, workspace.id);
     await addMember(owner, workspace.id, guest, 'GUEST');
 
-    const read = await request(
-      `/workspaces/${workspace.id}/projects/${project.id}/issues`,
-      { actor: guest },
-    );
+    const read = await request(`/workspaces/${workspace.id}/projects/${project.id}/issues`, {
+      actor: guest,
+    });
     expect(read.statusCode).toBe(200);
 
-    const write = await request(
-      `/workspaces/${workspace.id}/projects/${project.id}/issues`,
-      { method: 'POST', payload: { title: 'Nope' }, actor: guest },
-    );
+    const write = await request(`/workspaces/${workspace.id}/projects/${project.id}/issues`, {
+      method: 'POST',
+      payload: { title: 'Nope' },
+      actor: guest,
+    });
     expect(write.statusCode).toBe(403);
     expect(write.json().error).toBe('forbidden');
   });
@@ -140,10 +139,11 @@ describe('role boundaries', () => {
     const project = await createProject(owner, workspace.id);
     await addMember(owner, workspace.id, member, 'MEMBER');
 
-    const created = await request(
-      `/workspaces/${workspace.id}/projects/${project.id}/issues`,
-      { method: 'POST', payload: { title: 'Fix OAuth' }, actor: member },
-    );
+    const created = await request(`/workspaces/${workspace.id}/projects/${project.id}/issues`, {
+      method: 'POST',
+      payload: { title: 'Fix OAuth' },
+      actor: member,
+    });
     expect(created.statusCode).toBe(201);
 
     const invite = await request(`/workspaces/${workspace.id}/members`, {

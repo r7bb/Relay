@@ -6,8 +6,8 @@ import { useParams } from 'next/navigation';
 import { type FormEvent, useState } from 'react';
 import { PresenceBar } from '../../../components/presence.tsx';
 import { ErrorState, RoleBadge } from '../../../components/ui.tsx';
+import { api, type Member, type ProjectSummary, type WorkspaceSummary } from '../../../lib/api.ts';
 import { useRealtime } from '../../../lib/realtime.ts';
-import { type Member, type ProjectSummary, type WorkspaceSummary, api } from '../../../lib/api.ts';
 
 export default function WorkspacePage() {
   const { workspaceId } = useParams<{ workspaceId: string }>();

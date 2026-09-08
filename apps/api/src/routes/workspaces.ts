@@ -1,7 +1,7 @@
 import {
+  auditEvents,
   type Database,
   type Executor,
-  auditEvents,
   workspaceMembers,
   workspaces,
 } from '@relay/database';

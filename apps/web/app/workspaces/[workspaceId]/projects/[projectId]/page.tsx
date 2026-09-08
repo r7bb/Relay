@@ -1,14 +1,16 @@
 'use client';
 
 import { BOARD_COLUMNS, type IssueStatus } from '@relay/shared';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
-import { type FormEvent, useState } from 'react';
+import { type FormEvent, useEffect, useState } from 'react';
 import { PresenceBar } from '../../../../../components/presence.tsx';
+import { SyncStatus } from '../../../../../components/sync-status.tsx';
 import { ErrorState } from '../../../../../components/ui.tsx';
+import { api, type WorkspaceSummary } from '../../../../../lib/api.ts';
 import { useRealtime } from '../../../../../lib/realtime.ts';
-import { type IssueSummary, type WorkspaceSummary, api } from '../../../../../lib/api.ts';
+import { useOfflineBoard } from '../../../../../lib/use-offline-board.ts';
 
 const COLUMN_LABELS: Record<IssueStatus, string> = {
   TODO: 'Todo',
@@ -18,82 +20,39 @@ const COLUMN_LABELS: Record<IssueStatus, string> = {
   CANCELED: 'Canceled',
 };
 
-type IssueList = { issues: IssueSummary[] };
-
 export default function BoardPage() {
   const { workspaceId, projectId } = useParams<{ workspaceId: string; projectId: string }>();
-  const queryClient = useQueryClient();
   const [title, setTitle] = useState('');
-
-  const issuesKey = ['issues', workspaceId, projectId] as const;
 
   // Reporting the project as our location is what lets other people see who
   // else is looking at this board.
   const { presence, state: realtimeState } = useRealtime(workspaceId, projectId);
+
+  // The board reads from IndexedDB rather than the network, so it renders with
+  // no connection and survives a reload mid-edit.
+  const board = useOfflineBoard(workspaceId, projectId);
 
   const workspace = useQuery({
     queryKey: ['workspace', workspaceId],
     queryFn: () => api<{ workspace: WorkspaceSummary }>(`/workspaces/${workspaceId}`),
   });
 
-  const issues = useQuery({
-    queryKey: issuesKey,
-    queryFn: () =>
-      api<IssueList>(`/workspaces/${workspaceId}/projects/${projectId}/issues?limit=100`),
-  });
+  // A realtime event means someone else changed something, so pull it in rather
+  // than waiting for the next scheduled sync.
+  const { refresh } = board;
+  useEffect(() => {
+    if (realtimeState === 'live') void refresh();
+  }, [realtimeState, refresh]);
 
-  const createIssue = useMutation({
-    mutationFn: (issueTitle: string) =>
-      api<{ issue: IssueSummary }>(`/workspaces/${workspaceId}/projects/${projectId}/issues`, {
-        method: 'POST',
-        body: { title: issueTitle },
-      }),
-    onSuccess: () => {
-      setTitle('');
-      queryClient.invalidateQueries({ queryKey: issuesKey });
-    },
-  });
-
-  /**
-   * Optimistic move: the card jumps columns immediately and only reconciles
-   * with the server afterwards. This is the same shape the offline sync layer
-   * will need -- apply locally first, reconcile later -- so the UI is already
-   * written against it.
-   */
-  const moveIssue = useMutation({
-    mutationFn: ({ id, status }: { id: string; status: IssueStatus }) =>
-      api<{ issue: IssueSummary }>(`/workspaces/${workspaceId}/issues/${id}`, {
-        method: 'PATCH',
-        body: { status },
-      }),
-
-    onMutate: async ({ id, status }) => {
-      // Stop an in-flight refetch from landing after the optimistic write and
-      // clobbering it with stale data.
-      await queryClient.cancelQueries({ queryKey: issuesKey });
-      const previous = queryClient.getQueryData<IssueList>(issuesKey);
-
-      queryClient.setQueryData<IssueList>(issuesKey, (current) =>
-        current
-          ? { issues: current.issues.map((i) => (i.id === id ? { ...i, status } : i)) }
-          : current,
-      );
-
-      return { previous };
-    },
-
-    onError: (_error, _variables, context) => {
-      if (context?.previous) queryClient.setQueryData(issuesKey, context.previous);
-    },
-
-    onSettled: () => queryClient.invalidateQueries({ queryKey: issuesKey }),
-  });
-
-  if (issues.isError) return <ErrorState message={(issues.error as Error).message} />;
+  if (workspace.isError) return <ErrorState message={(workspace.error as Error).message} />;
 
   function onCreate(event: FormEvent) {
     event.preventDefault();
-    if (title.trim()) createIssue.mutate(title.trim());
+    const trimmed = title.trim();
+    if (!trimmed) return;
+
+    setTitle('');
+    void board.createIssue({ title: trimmed });
   }
 
   const role = workspace.data?.workspace.role;
@@ -113,7 +72,8 @@ export default function BoardPage() {
         <span className="text-slate-300">Board</span>
       </nav>
 
-      <div className="mt-4 flex justify-end">
+      <div className="mt-4 flex items-center justify-between gap-4">
+        <SyncStatus online={board.online} pending={board.pending} />
         <PresenceBar users={presence} state={realtimeState} here={projectId} />
       </div>
 
@@ -121,13 +81,13 @@ export default function BoardPage() {
         <form onSubmit={onCreate} className="mt-6 flex gap-2">
           <input
             value={title}
-            onChange={(e) => setTitle(e.target.value)}
+            onChange={(event) => setTitle(event.target.value)}
             placeholder="What needs doing?"
             className="flex-1 rounded-md border border-surface-border bg-surface-raised px-3 py-2 text-sm outline-none focus:border-indigo-500"
           />
           <button
             type="submit"
-            disabled={createIssue.isPending || !title.trim()}
+            disabled={!title.trim()}
             className="rounded-md bg-indigo-500 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-400 disabled:opacity-50"
           >
             Add issue
@@ -137,10 +97,13 @@ export default function BoardPage() {
 
       <div className="mt-8 grid gap-4 md:grid-cols-4">
         {BOARD_COLUMNS.map((column) => {
-          const columnIssues = issues.data?.issues.filter((i) => i.status === column) ?? [];
+          const columnIssues = board.issues.filter((issue) => issue.status === column);
 
           return (
-            <section key={column} className="rounded-lg border border-surface-border bg-surface-raised/50 p-3">
+            <section
+              key={column}
+              className="rounded-lg border border-surface-border bg-surface-raised/50 p-3"
+            >
               <h2 className="flex items-baseline justify-between text-xs font-medium uppercase tracking-wide text-slate-400">
                 {COLUMN_LABELS[column]}
                 <span className="text-slate-600">{columnIssues.length}</span>
@@ -150,14 +113,27 @@ export default function BoardPage() {
                 {columnIssues.map((issue) => (
                   <li
                     key={issue.id}
-                    className="rounded-md border border-surface-border bg-surface-raised p-3"
+                    className={[
+                      'rounded-md border bg-surface-raised p-3',
+                      issue.pending ? 'border-amber-500/40' : 'border-surface-border',
+                    ].join(' ')}
                   >
                     <div className="flex items-baseline justify-between gap-2">
                       <span className="font-mono text-[10px] text-slate-500">{issue.key}</span>
-                      {issue.priority !== 'NONE' && (
-                        <span className="text-[10px] uppercase tracking-wide text-amber-500/80">
-                          {issue.priority}
+
+                      {issue.pending ? (
+                        <span
+                          title="Saved on this device, not yet synced"
+                          className="text-[10px] uppercase tracking-wide text-amber-500/90"
+                        >
+                          Unsynced
                         </span>
+                      ) : (
+                        issue.priority !== 'NONE' && (
+                          <span className="text-[10px] uppercase tracking-wide text-amber-500/80">
+                            {issue.priority}
+                          </span>
+                        )
                       )}
                     </div>
 
@@ -170,8 +146,10 @@ export default function BoardPage() {
                     {canEdit && (
                       <select
                         value={issue.status}
-                        onChange={(e) =>
-                          moveIssue.mutate({ id: issue.id, status: e.target.value as IssueStatus })
+                        onChange={(event) =>
+                          void board.updateIssue(issue.id, {
+                            status: event.target.value as IssueStatus,
+                          })
                         }
                         aria-label={`Status for ${issue.key}`}
                         className="mt-3 w-full rounded border border-surface-border bg-surface px-2 py-1 text-xs text-slate-300 outline-none focus:border-indigo-500"

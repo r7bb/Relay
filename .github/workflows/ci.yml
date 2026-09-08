@@ -43,7 +43,14 @@ jobs:
         with:
           bun-version: 1.4.2
 
-      - run: bun install --frozen-lockfile
+      # Not --frozen-lockfile: the lockfile is resolved on macOS, so it records
+      # only the darwin variants of platform-specific optional dependencies
+      # (argon2, the Postgres binaries). A Linux runner legitimately needs to
+      # add its own, which a frozen install refuses to do.
+      - run: bun install
+
+      - name: Lint and format check
+        run: bun run lint
 
       - name: Typecheck
         run: bun run typecheck
@@ -51,5 +58,7 @@ jobs:
       - name: Test
         run: bun test
 
+      # `bun --filter <pkg> <script>` -- inserting `run` makes Bun look for a
+      # script literally named "run".
       - name: Build web
-        run: bun --filter @relay/web run build
+        run: bun --filter '@relay/web' build

@@ -1,16 +1,27 @@
 import {
+  auditEvents,
   type Database,
   type Executor,
-  auditEvents,
   publishEvent,
   users,
   workspaceMembers,
 } from '@relay/database';
-import { type Role, inviteMemberSchema, outranks, rankOf, setMemberRoleSchema } from '@relay/shared';
+import {
+  inviteMemberSchema,
+  outranks,
+  type Role,
+  rankOf,
+  setMemberRoleSchema,
+} from '@relay/shared';
 import { and, count, eq } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
 import { ApiError } from '../errors.ts';
-import { currentMembership, currentUser, requireAuth, requireMembership } from '../plugins/authz.ts';
+import {
+  currentMembership,
+  currentUser,
+  requireAuth,
+  requireMembership,
+} from '../plugins/authz.ts';
 import { parse } from '../validate.ts';
 
 async function ownerCount(db: Executor, workspaceId: string): Promise<number> {
@@ -152,7 +163,11 @@ export async function memberRoutes(app: FastifyInstance, opts: { db: Database })
 
       // Demoting the last owner would leave the workspace with nobody able to
       // delete it or promote a replacement.
-      if (target.role === 'OWNER' && input.role !== 'OWNER' && (await ownerCount(db, workspaceId)) <= 1) {
+      if (
+        target.role === 'OWNER' &&
+        input.role !== 'OWNER' &&
+        (await ownerCount(db, workspaceId)) <= 1
+      ) {
         throw ApiError.conflict('A workspace must keep at least one owner', 'last_owner');
       }
 
@@ -241,10 +256,7 @@ export async function memberRoutes(app: FastifyInstance, opts: { db: Database })
       await db
         .delete(workspaceMembers)
         .where(
-          and(
-            eq(workspaceMembers.workspaceId, workspaceId),
-            eq(workspaceMembers.userId, actor.id),
-          ),
+          and(eq(workspaceMembers.workspaceId, workspaceId), eq(workspaceMembers.userId, actor.id)),
         );
 
       return reply.status(204).send();

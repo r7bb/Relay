@@ -1,5 +1,5 @@
-import { ROLES, type Role, can, outranks, permissionsFor } from '@relay/shared';
 import { describe, expect, test } from 'bun:test';
+import { can, outranks, permissionsFor, ROLES, type Role } from '@relay/shared';
 
 /**
  * Pure tests over the permission matrix. These need no database and run in
