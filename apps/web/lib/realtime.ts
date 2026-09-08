@@ -24,12 +24,26 @@ export type ConnectionState = 'connecting' | 'live' | 'offline';
  * socket pushed, and it means a missed event during a reconnect is self-healing
  * -- the refetch on resubscribe brings everything current.
  */
-export function useRealtime(workspaceId: string | null, location: string | null = null) {
+export function useRealtime(
+  workspaceId: string | null,
+  location: string | null = null,
+  /**
+   * Called for every domain event. The board reads from the local store rather
+   * than from TanStack Query, so invalidating query keys is not enough to make
+   * it repaint -- it needs an explicit nudge to pull and reconcile.
+   */
+  onEvent?: (event: ServerEvent) => void,
+) {
   const queryClient = useQueryClient();
   const [presence, setPresence] = useState<PresenceUser[]>([]);
   const [state, setState] = useState<ConnectionState>('connecting');
 
   const socketRef = useRef<WebSocket | null>(null);
+
+  // Held in a ref so a caller passing an inline function does not tear down and
+  // rebuild the socket on every render.
+  const onEventRef = useRef(onEvent);
+  onEventRef.current = onEvent;
   // Held in a ref so the reconnect loop can read the current location without
   // being torn down and rebuilt every time the user navigates.
   const locationRef = useRef(location);
@@ -50,6 +64,8 @@ export function useRealtime(workspaceId: string | null, location: string | null 
     };
 
     function handleEvent(event: ServerEvent) {
+      onEventRef.current?.(event);
+
       const invalidate = (key: unknown[]) => queryClient.invalidateQueries({ queryKey: key });
 
       switch (event.type) {

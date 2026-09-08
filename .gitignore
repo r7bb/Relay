@@ -1,7 +1,5 @@
 node_modules/
 
-# Local agent/editor state
-.claude/
 .env
 .env.local
 dist/

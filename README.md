@@ -28,7 +28,7 @@ cp .env.example .env
 ```bash
 bun run db:start     # provisions + starts Postgres on :5433
 bun run db:push      # applies the schema
-bun run db:seed      # 5 users, 2 projects, 10 issues
+bun run db:seed      # 1 account, 2 projects, 10 issues
 ```
 
 ### 3. Run the three services
@@ -43,71 +43,52 @@ bun run dev:web        # Next.js client  → http://localhost:3000
 
 ### 4. Sign in
 
-Open <http://localhost:3000>. Every demo account uses the password
-`relay-demo-password`.
+Open <http://localhost:3000>.
 
 ![Sign in](docs/screenshots/01-login.png)
 
-| Email             | Role   | What they can do                                  |
-| ----------------- | ------ | ------------------------------------------------- |
-| `rohit@relay.dev` | OWNER  | Everything, including deleting the workspace      |
-| `sarah@relay.dev` | OWNER  | Everything                                        |
-| `alex@relay.dev`  | ADMIN  | Manage people and projects, but not delete the workspace |
-| `john@relay.dev`  | MEMBER | Create and edit issues; cannot manage people      |
-| `mia@relay.dev`   | GUEST  | Read and comment only                             |
-
-### 5. You're in
+| Email             | Password              | Role  |
+| ----------------- | --------------------- | ----- |
+| `rohit@relay.dev` | `relay-demo-password` | OWNER |
 
 ![Workspaces](docs/screenshots/02-workspaces.png)
 
-Click **Engineering**, then a project, to reach the board.
+Click **Engineering** for the workspace, then a project for its board.
+
+![Workspace](docs/screenshots/03-workspace.png)
+
+![Board](docs/screenshots/04-board.png)
 
 ---
 
 ## See the interesting parts
 
-### Live collaboration
+### Live updates
 
-Open the same workspace in two different browsers (or a normal window and a
-private one) and sign in as two different people. The presence bar shows who
-else is here, and a green ring means they are looking at the same board.
+Open the board in two windows. Create an issue in one and it appears in the
+other with no reload — the WebSocket event triggers a reconcile directly, so
+propagation is immediate rather than waiting on a poll.
 
-![Presence](docs/screenshots/03-workspace-presence.png)
+![Realtime](docs/screenshots/05-realtime.png)
 
-Create an issue in one browser. It appears in the other **without a reload** —
-measured at ~2ms locally.
-
-![Realtime issue](docs/screenshots/05-realtime-issue.png)
-
-Change its status in one browser and the card moves on the other.
-
-![Realtime move](docs/screenshots/06-realtime-moved.png)
-
-### Authorization you can see
-
-Sign in as `mia@relay.dev` (GUEST) and open the same board. Same data, but the
-add-issue field and every status dropdown are gone — and the API rejects the
-request with `403` even if you send it by hand with `curl`.
-
-![Guest board](docs/screenshots/07-guest-board.png)
+The presence bar counts distinct people, not tabs, so two windows signed in as
+the same account correctly read `1 online`.
 
 ### Working offline
 
-Open a board, then cut the network (DevTools → Network → Offline, or turn off
-Wi-Fi). The board keeps working — it renders from IndexedDB rather than fetching.
+On the board, cut the network (DevTools → Network → Offline, or turn off
+Wi-Fi). The board keeps working — it renders from IndexedDB rather than
+fetching.
 
-![Offline banner](docs/screenshots/08-offline-banner.png)
+Create issues with no connection. They appear immediately, outlined in amber
+and marked **Unsynced**, and the header counts what is waiting.
 
-Create issues with no connection. They appear immediately, outlined in amber and
-marked **Unsynced**, and the header counts what is waiting.
-
-![Unsynced issues](docs/screenshots/09-offline-unsynced.png)
+![Unsynced issues](docs/screenshots/06-offline-unsynced.png)
 
 Reconnect and the queue drains by itself. The placeholder keys become real
-`REL-7` / `REL-8`, the amber outlines clear, and anyone else on the board sees
-the issues appear.
+`REL-8` / `REL-9` and the amber outlines clear.
 
-![After reconnect](docs/screenshots/11-after-reconnect.png)
+![After reconnect](docs/screenshots/07-after-reconnect.png)
 
 **Scope, honestly:** this is offline for the board's *data*. The mutation queue
 and the issue store live in IndexedDB and survive a reload — there is
@@ -115,7 +96,25 @@ and the issue store live in IndexedDB and survive a reload — there is
 storage and flushes the queue it finds. What is *not* done is offline delivery
 of the app itself: a cold page load with no network fails, because there is no
 service worker caching the app shell, and routes other than the board still
-fetch normally. That is the next piece of work, not a claim being made here.
+fetch. That is the next piece of work, not a claim being made here.
+
+### Roles and permissions
+
+The seed creates one account, so there is nothing to see in the role model out
+of the box. To exercise it:
+
+```bash
+bun run db:seed --team
+```
+
+That adds an admin, a member and a guest (all `@relay.dev`, same password).
+Signing in as the guest shows the same board with the add-issue field and every
+status dropdown gone — and the API returns `403` even if you send the request by
+hand with `curl`.
+
+The rules themselves are covered by
+[`authorization.test.ts`](tests/authorization.test.ts) regardless of what is
+seeded.
 
 ---
 
@@ -127,7 +126,8 @@ fetch normally. That is the next piece of work, not a claim being made here.
 | `bun run db:stop`       | Stop it, keeping data                         |
 | `bun run db:reset`      | Destroy the data directory and re-provision   |
 | `bun run db:push`       | Sync the schema (development)                 |
-| `bun run db:seed`       | Load demo data                                |
+| `bun run db:seed`       | Load demo data (one account)                  |
+| `bun run db:seed --team`| Add an admin, member and guest for role demos |
 | `bun run grant:owner`   | Make an account OWNER of every workspace      |
 | `bun run dev:api`       | REST API on :4000                             |
 | `bun run dev:realtime`  | WebSocket gateway on :4001                    |

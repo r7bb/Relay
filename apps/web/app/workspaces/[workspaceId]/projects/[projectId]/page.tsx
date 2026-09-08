@@ -24,21 +24,22 @@ export default function BoardPage() {
   const { workspaceId, projectId } = useParams<{ workspaceId: string; projectId: string }>();
   const [title, setTitle] = useState('');
 
-  // Reporting the project as our location is what lets other people see who
-  // else is looking at this board.
-  const { presence, state: realtimeState } = useRealtime(workspaceId, projectId);
-
   // The board reads from IndexedDB rather than the network, so it renders with
   // no connection and survives a reload mid-edit.
   const board = useOfflineBoard(workspaceId, projectId);
+
+  // Reporting the project as our location is what lets other people see who
+  // else is looking at this board. Domain events pull straight through to a
+  // reconcile, so someone else's change lands immediately instead of waiting
+  // for the next scheduled sync.
+  const { presence, state: realtimeState } = useRealtime(workspaceId, projectId, board.refresh);
 
   const workspace = useQuery({
     queryKey: ['workspace', workspaceId],
     queryFn: () => api<{ workspace: WorkspaceSummary }>(`/workspaces/${workspaceId}`),
   });
 
-  // A realtime event means someone else changed something, so pull it in rather
-  // than waiting for the next scheduled sync.
+  // Reconnecting means we may have missed events while the socket was down.
   const { refresh } = board;
   useEffect(() => {
     if (realtimeState === 'live') void refresh();
