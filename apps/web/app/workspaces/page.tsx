@@ -3,7 +3,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { type FormEvent, useState } from 'react';
+import { type FormEvent, useEffect, useState } from 'react';
 import { RoleBadge } from '../../components/ui.tsx';
 import { api, type Me, type WorkspaceSummary } from '../../lib/api.ts';
 
@@ -35,15 +35,25 @@ export default function WorkspacesPage() {
   const signOut = useMutation({
     mutationFn: () => api<void>('/auth/logout', { method: 'POST' }),
     onSuccess: () => {
-      queryClient.clear();
+      // Navigate before clearing: dropping the cache first makes this still
+      // mounted page refetch `/auth/me`, get a 401, and bounce through the
+      // unauthenticated redirect below for no reason.
       router.replace('/login');
+      queryClient.clear();
     },
   });
 
-  if (me.isError) {
-    router.replace('/login');
-    return null;
-  }
+  // `/auth/me` failing means no valid session -- the cookie expired, or the
+  // user just signed out. Redirecting has to happen in an effect: navigation
+  // updates the router's state, and React forbids updating another component
+  // while this one is rendering.
+  const unauthenticated = me.isError;
+
+  useEffect(() => {
+    if (unauthenticated) router.replace('/login');
+  }, [unauthenticated, router]);
+
+  if (unauthenticated) return null;
 
   function onCreate(event: FormEvent) {
     event.preventDefault();
