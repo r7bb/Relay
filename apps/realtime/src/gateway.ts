@@ -78,6 +78,9 @@ export async function createGateway(options: GatewayOptions) {
   const rooms = new DocumentRooms(db);
   const sockets = new Set<Bun.ServerWebSocket<SocketData>>();
 
+  /** Tail of the in-flight handler chain for each connection. */
+  const pendingWork = new WeakMap<Bun.ServerWebSocket<SocketData>, Promise<void>>();
+
   function send(socket: Bun.ServerWebSocket<SocketData>, message: ServerMessage) {
     socket.send(JSON.stringify(message));
   }
@@ -157,7 +160,7 @@ export async function createGateway(options: GatewayOptions) {
         sockets.add(socket);
       },
 
-      async message(socket, raw) {
+      message(socket, raw) {
         let message: ClientMessage;
         try {
           message = JSON.parse(String(raw)) as ClientMessage;
@@ -165,28 +168,34 @@ export async function createGateway(options: GatewayOptions) {
           return send(socket, { type: 'error', message: 'Malformed message' });
         }
 
-        // One handler per message type, so adding a message kind does not make
-        // an already-long switch longer.
-        switch (message.type) {
-          case 'subscribe':
-            return handleSubscribe(socket, message.workspaceId);
-          case 'location':
-            return handleLocation(socket, message.location);
-          case 'ping':
-            return handlePing(socket);
-          case 'doc.open':
-            return handleDocOpen(socket, message.documentId);
-          case 'doc.close':
-            return handleDocClose(socket, message.documentId);
-          case 'doc.update':
-            return handleDocUpdate(socket, message.documentId, message.update);
-          case 'doc.awareness':
-            return handleDocAwareness(socket, message.documentId, message.state);
-        }
+        /*
+         * Handle one message at a time per connection.
+         *
+         * Several handlers are async, and the runtime does not wait for one to
+         * finish before delivering the next. A client that sends `subscribe`
+         * immediately followed by `doc.open` would otherwise race: the second
+         * runs while the first is still awaiting its membership lookup, sees no
+         * workspace on the socket, and is rejected. Chaining keeps the observable
+         * order the same as the wire order.
+         */
+        const queue = pendingWork.get(socket) ?? Promise.resolve();
+
+        const next = queue
+          .then(() => dispatch(socket, message))
+          .catch((error) => {
+            console.error('gateway: message handler failed', error);
+          });
+
+        pendingWork.set(socket, next);
       },
 
       async close(socket) {
         sockets.delete(socket);
+
+        // Let queued handlers finish before releasing rooms, so an update still
+        // being applied is not dropped on the floor.
+        await pendingWork.get(socket)?.catch(() => {});
+
         const { workspaceId, connectionId, openDocuments } = socket.data;
 
         // Leaving the last seat in a room flushes its pending writes, so a
@@ -205,6 +214,26 @@ export async function createGateway(options: GatewayOptions) {
       },
     },
   });
+
+  /** One handler per message type, so the switch stays flat as kinds are added. */
+  function dispatch(socket: Bun.ServerWebSocket<SocketData>, message: ClientMessage) {
+    switch (message.type) {
+      case 'subscribe':
+        return handleSubscribe(socket, message.workspaceId);
+      case 'location':
+        return handleLocation(socket, message.location);
+      case 'ping':
+        return handlePing(socket);
+      case 'doc.open':
+        return handleDocOpen(socket, message.documentId);
+      case 'doc.close':
+        return handleDocClose(socket, message.documentId);
+      case 'doc.update':
+        return handleDocUpdate(socket, message.documentId, message.update);
+      case 'doc.awareness':
+        return handleDocAwareness(socket, message.documentId, message.state);
+    }
+  }
 
   /**
    * Join a workspace feed.

@@ -3,3 +3,4 @@ export * from './events.ts';
 export * from './rbac.ts';
 export * from './schemas.ts';
 export * from './slug.ts';
+export * from './text.ts';

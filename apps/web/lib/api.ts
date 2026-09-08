@@ -82,3 +82,10 @@ export type Member = {
   name: string;
   role: Role;
 };
+
+export type DocumentSummary = {
+  id: string;
+  title: string;
+  projectId: string | null;
+  updatedAt: string;
+};

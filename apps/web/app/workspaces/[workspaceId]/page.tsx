@@ -6,7 +6,13 @@ import { useParams } from 'next/navigation';
 import { type FormEvent, useState } from 'react';
 import { PresenceBar } from '../../../components/presence.tsx';
 import { ErrorState, RoleBadge } from '../../../components/ui.tsx';
-import { api, type Member, type ProjectSummary, type WorkspaceSummary } from '../../../lib/api.ts';
+import {
+  api,
+  type DocumentSummary,
+  type Member,
+  type ProjectSummary,
+  type WorkspaceSummary,
+} from '../../../lib/api.ts';
 import { useRealtime } from '../../../lib/realtime.ts';
 
 export default function WorkspacePage() {
@@ -26,6 +32,25 @@ export default function WorkspacePage() {
   const projects = useQuery({
     queryKey: ['projects', workspaceId],
     queryFn: () => api<{ projects: ProjectSummary[] }>(`/workspaces/${workspaceId}/projects`),
+  });
+
+  const [documentTitle, setDocumentTitle] = useState('');
+
+  const documentList = useQuery({
+    queryKey: ['documents', workspaceId],
+    queryFn: () => api<{ documents: DocumentSummary[] }>(`/workspaces/${workspaceId}/documents`),
+  });
+
+  const createDocument = useMutation({
+    mutationFn: (title: string) =>
+      api<{ document: DocumentSummary }>(`/workspaces/${workspaceId}/documents`, {
+        method: 'POST',
+        body: { title },
+      }),
+    onSuccess: () => {
+      setDocumentTitle('');
+      queryClient.invalidateQueries({ queryKey: ['documents', workspaceId] });
+    },
   });
 
   const members = useQuery({
@@ -114,6 +139,54 @@ export default function WorkspacePage() {
             </p>
           </Link>
         ))}
+      </section>
+
+      <section className="mt-12">
+        <h2 className="text-sm font-medium uppercase tracking-wide text-slate-500">Documents</h2>
+
+        {canCreateProject && (
+          <form
+            onSubmit={(event) => {
+              event.preventDefault();
+              const trimmed = documentTitle.trim();
+              if (trimmed) createDocument.mutate(trimmed);
+            }}
+            className="mt-3 flex gap-2"
+          >
+            <input
+              value={documentTitle}
+              onChange={(event) => setDocumentTitle(event.target.value)}
+              placeholder="New document title"
+              className="flex-1 rounded-md border border-surface-border bg-surface-raised px-3 py-2 text-sm outline-none focus:border-indigo-500"
+            />
+            <button
+              type="submit"
+              disabled={createDocument.isPending || !documentTitle.trim()}
+              className="rounded-md bg-indigo-500 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-400 disabled:opacity-50"
+            >
+              Create document
+            </button>
+          </form>
+        )}
+
+        <ul className="mt-3 space-y-2">
+          {documentList.data?.documents.map((document) => (
+            <li key={document.id}>
+              <Link
+                href={`/workspaces/${workspaceId}/documents/${document.id}`}
+                className="block rounded-lg border border-surface-border bg-surface-raised px-4 py-3 text-sm text-slate-200 transition hover:border-slate-600"
+              >
+                {document.title}
+              </Link>
+            </li>
+          ))}
+        </ul>
+
+        {documentList.isSuccess && documentList.data.documents.length === 0 && (
+          <p className="mt-3 text-sm text-slate-500">
+            No documents yet. Create one to try collaborative editing.
+          </p>
+        )}
       </section>
 
       <section className="mt-12">
