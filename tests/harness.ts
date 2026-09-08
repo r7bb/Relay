@@ -22,6 +22,9 @@ export const TEST_URL =
 /** Every table that holds test state, in an order safe for `TRUNCATE CASCADE`. */
 const TABLES = [
   'audit_events',
+  'document_updates',
+  'documents',
+  'mutations',
   'comments',
   'issues',
   'projects',

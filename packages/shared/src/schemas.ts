@@ -122,3 +122,15 @@ export const createCommentSchema = z.object({
   body: z.string().min(1).max(10_000).trim(),
 });
 export type CreateCommentInput = z.infer<typeof createCommentSchema>;
+
+export const createDocumentSchema = z.object({
+  title: z.string().min(1).max(200).trim(),
+  /** Optional: a document can hang off the workspace rather than a project. */
+  projectId: uuid.nullable().optional(),
+});
+export type CreateDocumentInput = z.infer<typeof createDocumentSchema>;
+
+export const updateDocumentSchema = z
+  .object({ title: z.string().min(1).max(200).trim() })
+  .partial()
+  .refine((v) => Object.keys(v).length > 0, { message: 'No fields to update' });

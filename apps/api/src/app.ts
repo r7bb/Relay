@@ -7,6 +7,7 @@ import { ApiError } from './errors.ts';
 import { attachUser } from './plugins/authz.ts';
 import { authRoutes } from './routes/auth.ts';
 import { commentRoutes } from './routes/comments.ts';
+import { documentRoutes } from './routes/documents.ts';
 import { issueRoutes } from './routes/issues.ts';
 import { memberRoutes } from './routes/members.ts';
 import { projectRoutes } from './routes/projects.ts';
@@ -61,6 +62,7 @@ export function buildApp({ db, env, logger = false }: AppDeps): FastifyInstance 
   app.register(projectRoutes, { db });
   app.register(issueRoutes, { db });
   app.register(commentRoutes, { db });
+  app.register(documentRoutes, { db });
 
   return app;
 }

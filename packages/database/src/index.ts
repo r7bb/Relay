@@ -2,6 +2,7 @@ import { drizzle } from 'drizzle-orm/postgres-js';
 import postgres from 'postgres';
 import * as schema from './schema.ts';
 
+export * from './documents.ts';
 export * from './events.ts';
 export * from './presence-bus.ts';
 export * from './queries.ts';

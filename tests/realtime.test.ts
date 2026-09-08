@@ -2,6 +2,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'bun:tes
 import { createGateway } from '@relay/realtime/gateway';
 import type { ServerMessage } from '@relay/shared';
 import postgres from 'postgres';
+import * as Y from 'yjs';
 import {
   type Actor,
   addMember,
@@ -90,6 +91,23 @@ class TestClient {
     }
 
     throw new Error(`Timed out. Received: ${JSON.stringify(this.messages.map((m) => m.type))}`);
+  }
+
+  /** Open a document room and wait for the catch-up state. */
+  async openDocument(documentId: string) {
+    this.send({ type: 'doc.open', documentId });
+    return this.waitFor(
+      (m): m is Extract<ServerMessage, { type: 'doc.sync' }> => m.type === 'doc.sync',
+    );
+  }
+
+  sendUpdate(documentId: string, doc: Y.Doc, since?: Uint8Array) {
+    const update = since ? Y.encodeStateAsUpdate(doc, since) : Y.encodeStateAsUpdate(doc);
+    this.send({
+      type: 'doc.update',
+      documentId,
+      update: Buffer.from(update).toString('base64'),
+    });
   }
 
   async subscribe(workspaceId: string) {
@@ -421,5 +439,212 @@ describe('presence', () => {
     expect(latest.users[0]!.name).toBe('Ada');
 
     for (const tab of tabs) tab.close();
+  });
+});
+
+describe('document collaboration', () => {
+  async function seedDocument(actor: Actor, workspaceId: string, title = 'Architecture') {
+    const response = await request(`/workspaces/${workspaceId}/documents`, {
+      method: 'POST',
+      payload: { title },
+      actor,
+    });
+
+    if (response.statusCode !== 201) {
+      throw new Error(`Failed to create document: ${response.statusCode} ${response.body}`);
+    }
+    return response.json().document as { id: string; title: string };
+  }
+
+  const isDocUpdate = (m: ServerMessage): m is Extract<ServerMessage, { type: 'doc.update' }> =>
+    m.type === 'doc.update';
+
+  const isAwareness = (m: ServerMessage): m is Extract<ServerMessage, { type: 'doc.awareness' }> =>
+    m.type === 'doc.awareness';
+
+  test('opening a document returns its current state in one message', async () => {
+    const owner = await createActor('Owner');
+    const workspace = await createWorkspace(owner);
+    const document = await seedDocument(owner, workspace.id);
+
+    const author = await TestClient.connect(owner);
+    await author.subscribe(workspace.id);
+
+    const local = new Y.Doc();
+    local.getText('content').insert(0, 'First draft');
+    await author.openDocument(document.id);
+    author.sendUpdate(document.id, local);
+
+    // A second client joining later must receive the text without replaying
+    // anything.
+    const latecomer = await TestClient.connect(owner);
+    await latecomer.subscribe(workspace.id);
+    const sync = await latecomer.openDocument(document.id);
+
+    const restored = new Y.Doc();
+    Y.applyUpdate(restored, new Uint8Array(Buffer.from(sync.update, 'base64')));
+    expect(restored.getText('content').toString()).toBe('First draft');
+
+    author.close();
+    latecomer.close();
+  });
+
+  test('an edit reaches the other editor', async () => {
+    const owner = await createActor('Owner');
+    const workspace = await createWorkspace(owner);
+    const document = await seedDocument(owner, workspace.id);
+
+    const a = await TestClient.connect(owner);
+    const b = await TestClient.connect(owner);
+    await a.subscribe(workspace.id);
+    await b.subscribe(workspace.id);
+    await a.openDocument(document.id);
+    await b.openDocument(document.id);
+
+    const local = new Y.Doc();
+    local.getText('content').insert(0, 'typed by A');
+    a.sendUpdate(document.id, local);
+
+    const relayed = await b.waitFor(isDocUpdate);
+    const mirror = new Y.Doc();
+    Y.applyUpdate(mirror, new Uint8Array(Buffer.from(relayed.update, 'base64')));
+
+    expect(mirror.getText('content').toString()).toBe('typed by A');
+
+    a.close();
+    b.close();
+  });
+
+  /** The property CRDTs exist for, exercised through the real transport. */
+  test('concurrent edits from two sockets converge', async () => {
+    const owner = await createActor('Owner');
+    const workspace = await createWorkspace(owner);
+    const document = await seedDocument(owner, workspace.id);
+
+    const a = await TestClient.connect(owner);
+    const b = await TestClient.connect(owner);
+    await a.subscribe(workspace.id);
+    await b.subscribe(workspace.id);
+
+    const docA = new Y.Doc();
+    const docB = new Y.Doc();
+    Y.applyUpdate(
+      docA,
+      new Uint8Array(Buffer.from((await a.openDocument(document.id)).update, 'base64')),
+    );
+    Y.applyUpdate(
+      docB,
+      new Uint8Array(Buffer.from((await b.openDocument(document.id)).update, 'base64')),
+    );
+
+    // Both type into the same empty document without seeing each other yet.
+    docA.getText('content').insert(0, 'AAA');
+    docB.getText('content').insert(0, 'BBB');
+    a.sendUpdate(document.id, docA);
+    b.sendUpdate(document.id, docB);
+
+    // Each receives the other's update and applies it.
+    const toB = await b.waitFor(isDocUpdate);
+    Y.applyUpdate(docB, new Uint8Array(Buffer.from(toB.update, 'base64')));
+    const toA = await a.waitFor(isDocUpdate);
+    Y.applyUpdate(docA, new Uint8Array(Buffer.from(toA.update, 'base64')));
+
+    const text = docA.getText('content').toString();
+    expect(docB.getText('content').toString()).toBe(text);
+    expect(text).toContain('AAA');
+    expect(text).toContain('BBB');
+
+    a.close();
+    b.close();
+  });
+
+  test('edits are persisted and survive everyone leaving', async () => {
+    const owner = await createActor('Owner');
+    const workspace = await createWorkspace(owner);
+    const document = await seedDocument(owner, workspace.id);
+
+    const author = await TestClient.connect(owner);
+    await author.subscribe(workspace.id);
+    await author.openDocument(document.id);
+
+    const local = new Y.Doc();
+    local.getText('content').insert(0, 'Durable text');
+    author.sendUpdate(document.id, local);
+
+    // Closing the last connection flushes the debounced write.
+    author.close();
+
+    await Bun.sleep(1200);
+
+    const fetched = await request(`/workspaces/${workspace.id}/documents/${document.id}`, {
+      actor: owner,
+    });
+    expect(fetched.json().document.text).toBe('Durable text');
+  });
+
+  test('awareness reports who is editing, and is not persisted', async () => {
+    const owner = await createActor('Owner');
+    const workspace = await createWorkspace(owner);
+    const document = await seedDocument(owner, workspace.id);
+
+    const a = await TestClient.connect(owner);
+    const b = await TestClient.connect(owner);
+    await a.subscribe(workspace.id);
+    await b.subscribe(workspace.id);
+    await a.openDocument(document.id);
+    await b.openDocument(document.id);
+
+    a.send({ type: 'doc.awareness', documentId: document.id, state: { cursor: 7 } });
+
+    const roster = await b.waitFor(
+      (m): m is Extract<ServerMessage, { type: 'doc.awareness' }> =>
+        isAwareness(m) && m.users.some((u) => u.cursor === 7),
+    );
+    expect(roster.users.some((u) => u.cursor === 7)).toBe(true);
+
+    a.close();
+    b.close();
+  });
+
+  /** A document id from another workspace must not be reachable. */
+  test('opening a document from another workspace is refused', async () => {
+    const alice = await createActor('Alice');
+    const bob = await createActor('Bob');
+    const alpha = await createWorkspace(alice, 'Alpha');
+    const beta = await createWorkspace(bob, 'Beta');
+    const betaDocument = await seedDocument(bob, beta.id);
+
+    const client = await TestClient.connect(alice);
+    await client.subscribe(alpha.id);
+    client.send({ type: 'doc.open', documentId: betaDocument.id });
+
+    const error = await client.waitFor(isError);
+    expect(error.message).toContain('Document not found');
+
+    client.close();
+  });
+
+  test('sending an update without opening the document does nothing', async () => {
+    const owner = await createActor('Owner');
+    const workspace = await createWorkspace(owner);
+    const document = await seedDocument(owner, workspace.id);
+
+    const watcher = await TestClient.connect(owner);
+    await watcher.subscribe(workspace.id);
+    await watcher.openDocument(document.id);
+
+    const rogue = await TestClient.connect(owner);
+    await rogue.subscribe(workspace.id);
+
+    const local = new Y.Doc();
+    local.getText('content').insert(0, 'should not appear');
+    rogue.sendUpdate(document.id, local);
+
+    // Give the gateway a chance to misbehave.
+    await Bun.sleep(300);
+    expect(watcher.messages.filter(isDocUpdate)).toHaveLength(0);
+
+    watcher.close();
+    rogue.close();
   });
 });

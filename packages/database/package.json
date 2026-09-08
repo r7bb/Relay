@@ -16,7 +16,8 @@
   "dependencies": {
     "@relay/shared": "workspace:*",
     "drizzle-orm": "^0.38.0",
-    "postgres": "^3.4.5"
+    "postgres": "^3.4.5",
+    "yjs": "^13.6.32"
   },
   "devDependencies": {
     "drizzle-kit": "^0.30.0"

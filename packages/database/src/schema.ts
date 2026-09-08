@@ -1,7 +1,9 @@
 import { ISSUE_PRIORITIES, ISSUE_STATUSES, ROLES } from '@relay/shared';
 import { relations, sql } from 'drizzle-orm';
 import {
+  bigserial,
   boolean,
+  customType,
   index,
   integer,
   pgEnum,
@@ -12,6 +14,17 @@ import {
   uniqueIndex,
   uuid,
 } from 'drizzle-orm/pg-core';
+
+/**
+ * Raw binary column. Yjs updates are an opaque byte encoding, so they are
+ * stored as `bytea` rather than base64 text -- no 33% size penalty, and no
+ * encode/decode on every read.
+ */
+const bytea = customType<{ data: Uint8Array; driverData: Buffer }>({
+  dataType: () => 'bytea',
+  toDriver: (value) => Buffer.from(value),
+  fromDriver: (value) => new Uint8Array(value),
+});
 
 const id = () => uuid('id').primaryKey().defaultRandom();
 const createdAt = () => timestamp('created_at', { withTimezone: true }).notNull().defaultNow();
@@ -214,6 +227,67 @@ export const auditEvents = pgTable(
 );
 
 /**
+ * Collaboratively edited documents, stored as Yjs CRDT state.
+ *
+ * The content is not text but an opaque binary encoding of the CRDT, because
+ * the merge rules live in the data structure rather than in the server. That is
+ * the whole point: two people editing the same paragraph while offline both
+ * keep their edit, and every replica reaches the same result regardless of the
+ * order updates arrive in. Storing plain text would force the server to pick a
+ * winner, which is the thing CRDTs exist to avoid.
+ */
+export const documents = pgTable(
+  'documents',
+  {
+    id: id(),
+    workspaceId: uuid('workspace_id')
+      .notNull()
+      .references(() => workspaces.id, { onDelete: 'cascade' }),
+    /** Optional: a document can belong to the workspace rather than a project. */
+    projectId: uuid('project_id').references(() => projects.id, { onDelete: 'cascade' }),
+    title: text('title').notNull(),
+    /**
+     * Compacted CRDT state. Reading a document means this plus every row in
+     * `document_updates` recorded after it.
+     */
+    snapshot: bytea('snapshot'),
+    createdBy: uuid('created_by')
+      .notNull()
+      .references(() => users.id, { onDelete: 'restrict' }),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    index('documents_workspace_idx').on(t.workspaceId),
+    index('documents_project_idx').on(t.projectId),
+  ],
+);
+
+/**
+ * Append-only log of CRDT updates.
+ *
+ * Writing a new full snapshot on every keystroke would rewrite the entire
+ * document for a one-character change. Appending the update instead makes a
+ * write proportional to the edit, and Yjs merges the log back into a snapshot
+ * cheaply -- see `compactDocument`.
+ *
+ * `seq` is a bigserial rather than a timestamp: updates must be replayed in the
+ * order the server accepted them, and two updates can share a millisecond.
+ */
+export const documentUpdates = pgTable(
+  'document_updates',
+  {
+    seq: bigserial('seq', { mode: 'number' }).primaryKey(),
+    documentId: uuid('document_id')
+      .notNull()
+      .references(() => documents.id, { onDelete: 'cascade' }),
+    update: bytea('update').notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [index('document_updates_document_seq_idx').on(t.documentId, t.seq)],
+);
+
+/**
  * Idempotency ledger.
  *
  * An offline client retries whatever is still in its queue when it reconnects,
@@ -295,3 +369,5 @@ export type Issue = typeof issues.$inferSelect;
 export type Comment = typeof comments.$inferSelect;
 export type AuditEvent = typeof auditEvents.$inferSelect;
 export type Mutation = typeof mutations.$inferSelect;
+export type Document = typeof documents.$inferSelect;
+export type DocumentUpdate = typeof documentUpdates.$inferSelect;

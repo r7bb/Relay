@@ -6,8 +6,15 @@ import {
   subscribeToEvents,
   subscribeToPresence,
 } from '@relay/database';
-import type { ClientMessage, PresenceMessage, ServerEvent, ServerMessage } from '@relay/shared';
+import type {
+  ClientMessage,
+  DocumentAwareness,
+  PresenceMessage,
+  ServerEvent,
+  ServerMessage,
+} from '@relay/shared';
 import type postgres from 'postgres';
+import { DocumentRooms, documentInWorkspace } from './documents.ts';
 import { PresenceRegistry } from './presence.ts';
 
 /**
@@ -23,6 +30,8 @@ import { PresenceRegistry } from './presence.ts';
  * definition of who you are and what you may see.
  */
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 /** How often each instance re-announces its presence entries to peers. Must be
  * comfortably below PRESENCE_TTL_MS so peers never expire a live connection. */
 const REANNOUNCE_INTERVAL_MS = 15_000;
@@ -35,6 +44,8 @@ type SocketData = {
   /** Null until the client sends `subscribe` and passes the membership check. */
   workspaceId: string | null;
   location: string | null;
+  /** Documents this connection has open, so close can release all of them. */
+  openDocuments: Set<string>;
 };
 
 export type GatewayOptions = {
@@ -64,6 +75,7 @@ export async function createGateway(options: GatewayOptions) {
   const instanceId = options.instanceId ?? crypto.randomUUID();
 
   const presence = new PresenceRegistry();
+  const rooms = new DocumentRooms(db);
   const sockets = new Set<Bun.ServerWebSocket<SocketData>>();
 
   function send(socket: Bun.ServerWebSocket<SocketData>, message: ServerMessage) {
@@ -106,6 +118,7 @@ export async function createGateway(options: GatewayOptions) {
           instanceId,
           connections: sockets.size,
           presence: presence.size,
+          documentRooms: rooms.size,
         });
       }
 
@@ -132,6 +145,7 @@ export async function createGateway(options: GatewayOptions) {
           name: user.name,
           workspaceId: null,
           location: null,
+          openDocuments: new Set<string>(),
         } satisfies SocketData,
       });
 
@@ -160,12 +174,29 @@ export async function createGateway(options: GatewayOptions) {
             return handleLocation(socket, message.location);
           case 'ping':
             return handlePing(socket);
+          case 'doc.open':
+            return handleDocOpen(socket, message.documentId);
+          case 'doc.close':
+            return handleDocClose(socket, message.documentId);
+          case 'doc.update':
+            return handleDocUpdate(socket, message.documentId, message.update);
+          case 'doc.awareness':
+            return handleDocAwareness(socket, message.documentId, message.state);
         }
       },
 
       async close(socket) {
         sockets.delete(socket);
-        const { workspaceId, connectionId } = socket.data;
+        const { workspaceId, connectionId, openDocuments } = socket.data;
+
+        // Leaving the last seat in a room flushes its pending writes, so a
+        // closed tab does not strand unsaved edits.
+        for (const documentId of openDocuments) {
+          const room = await rooms.leave(documentId, connectionId);
+          if (room) broadcastAwareness(documentId);
+        }
+        openDocuments.clear();
+
         if (!workspaceId) return;
 
         presence.remove(connectionId);
@@ -212,6 +243,118 @@ export async function createGateway(options: GatewayOptions) {
   /** Refreshes this connection's TTL locally and on peers. */
   async function handlePing(socket: Bun.ServerWebSocket<SocketData>) {
     if (socket.data.workspaceId) await announce(socket);
+  }
+
+  /** Push the current cursor roster for a document to everyone editing it. */
+  function broadcastAwareness(documentId: string) {
+    const room = rooms.get(documentId);
+    if (!room) return;
+
+    const message = JSON.stringify({
+      type: 'doc.awareness',
+      documentId,
+      users: room.awarenessList(),
+    } satisfies ServerMessage);
+
+    for (const socket of sockets) {
+      if (socket.data.openDocuments.has(documentId)) socket.send(message);
+    }
+  }
+
+  /** Relay a document update to every other editor. The sender already has it. */
+  function broadcastDocUpdate(documentId: string, update: string, from: string) {
+    const message = JSON.stringify({
+      type: 'doc.update',
+      documentId,
+      update,
+      actorId: from,
+    } satisfies ServerMessage);
+
+    for (const socket of sockets) {
+      if (socket.data.connectionId === from) continue;
+      if (socket.data.openDocuments.has(documentId)) socket.send(message);
+    }
+  }
+
+  /**
+   * Join a document room.
+   *
+   * The document must live in the workspace this socket is subscribed to --
+   * membership was checked at subscribe time, and this ties the document to
+   * that same tenant so a document id from elsewhere is not reachable.
+   */
+  async function handleDocOpen(socket: Bun.ServerWebSocket<SocketData>, documentId: string) {
+    const { workspaceId } = socket.data;
+    if (!workspaceId) {
+      return send(socket, { type: 'error', message: 'Subscribe to a workspace first' });
+    }
+
+    if (!UUID_RE.test(documentId) || !(await documentInWorkspace(db, documentId, workspaceId))) {
+      return send(socket, { type: 'error', message: 'Document not found' });
+    }
+
+    const room = await rooms.join(documentId, {
+      connectionId: socket.data.connectionId,
+      userId: socket.data.userId,
+      name: socket.data.name,
+      awareness: { cursor: null },
+    });
+
+    socket.data.openDocuments.add(documentId);
+
+    // One catch-up message rather than a replay of the update log.
+    send(socket, {
+      type: 'doc.sync',
+      documentId,
+      update: Buffer.from(room.fullState()).toString('base64'),
+    });
+
+    broadcastAwareness(documentId);
+  }
+
+  async function handleDocClose(socket: Bun.ServerWebSocket<SocketData>, documentId: string) {
+    if (!socket.data.openDocuments.delete(documentId)) return;
+
+    const room = await rooms.leave(documentId, socket.data.connectionId);
+    if (room) broadcastAwareness(documentId);
+  }
+
+  function handleDocUpdate(
+    socket: Bun.ServerWebSocket<SocketData>,
+    documentId: string,
+    encoded: string,
+  ) {
+    if (!socket.data.openDocuments.has(documentId)) return;
+
+    const room = rooms.get(documentId);
+    if (!room) return;
+
+    let update: Uint8Array;
+    try {
+      update = new Uint8Array(Buffer.from(encoded, 'base64'));
+    } catch {
+      return send(socket, { type: 'error', message: 'Malformed document update' });
+    }
+
+    // Nothing new means nothing to relay -- Yjs tolerates duplicates, but the
+    // other editors should not pay for them.
+    if (room.applyUpdate(update)) {
+      broadcastDocUpdate(documentId, encoded, socket.data.connectionId);
+    }
+  }
+
+  function handleDocAwareness(
+    socket: Bun.ServerWebSocket<SocketData>,
+    documentId: string,
+    state: DocumentAwareness,
+  ) {
+    const room = rooms.get(documentId);
+    const participant = room?.participants.get(socket.data.connectionId);
+    if (!participant) return;
+
+    // Cursor positions are ephemeral by definition; they are never persisted.
+    participant.awareness = state;
+    broadcastAwareness(documentId);
   }
 
   /** Record a connection locally and tell peers about it. */
@@ -277,6 +420,9 @@ export async function createGateway(options: GatewayOptions) {
 
       for (const socket of sockets) socket.close(1001, 'Server shutting down');
       sockets.clear();
+
+      // Persist anything still debounced before the process goes away.
+      await rooms.closeAll();
 
       await server.stop(true);
     },

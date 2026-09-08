@@ -38,7 +38,8 @@ export type ServerEvent =
   | { type: 'project.created'; workspaceId: string; projectId: string; actorId: string }
   | { type: 'project.deleted'; workspaceId: string; projectId: string; actorId: string }
   | { type: 'comment.created'; workspaceId: string; issueId: string; actorId: string }
-  | { type: 'member.changed'; workspaceId: string; actorId: string };
+  | { type: 'member.changed'; workspaceId: string; actorId: string }
+  | { type: 'document.created'; workspaceId: string; documentId: string; actorId: string };
 
 export type PresenceUser = {
   userId: string;
@@ -47,18 +48,53 @@ export type PresenceUser = {
   location: string | null;
 };
 
+/**
+ * Document sync messages.
+ *
+ * Yjs updates are binary, and this socket carries JSON, so they travel
+ * base64-encoded. That costs ~33% in size; the alternative is a second binary
+ * socket, which is not worth the complexity at this scale. The encoding is
+ * confined to these two message types.
+ */
+export type DocumentClientMessage =
+  | { type: 'doc.open'; documentId: string }
+  | { type: 'doc.close'; documentId: string }
+  /** A Yjs update this client produced, base64-encoded. */
+  | { type: 'doc.update'; documentId: string; update: string }
+  /** Ephemeral cursor/selection state. Never persisted. */
+  | { type: 'doc.awareness'; documentId: string; state: DocumentAwareness };
+
+export type DocumentAwareness = {
+  /** Caret offset in the shared text, or null when not focused. */
+  cursor: number | null;
+  /** Selection end, when a range is selected. */
+  anchor?: number | null;
+};
+
+export type DocumentServerMessage =
+  /** Full state on open, so a joining client catches up in one round trip. */
+  | { type: 'doc.sync'; documentId: string; update: string }
+  | { type: 'doc.update'; documentId: string; update: string; actorId: string }
+  | {
+      type: 'doc.awareness';
+      documentId: string;
+      users: (DocumentAwareness & { userId: string; name: string })[];
+    };
+
 /** Messages the gateway sends down the socket. */
 export type ServerMessage =
   | { type: 'ready'; userId: string; workspaceId: string }
   | { type: 'event'; event: ServerEvent }
   | { type: 'presence'; workspaceId: string; users: PresenceUser[] }
-  | { type: 'error'; message: string };
+  | { type: 'error'; message: string }
+  | DocumentServerMessage;
 
 /** Messages the client sends up the socket. */
 export type ClientMessage =
   | { type: 'subscribe'; workspaceId: string }
   | { type: 'location'; location: string | null }
-  | { type: 'ping' };
+  | { type: 'ping' }
+  | DocumentClientMessage;
 
 /**
  * Presence gossip between gateway instances.
