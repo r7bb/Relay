@@ -1,0 +1,261 @@
+import { ISSUE_PRIORITIES, ISSUE_STATUSES, ROLES } from '@relay/shared';
+import { relations, sql } from 'drizzle-orm';
+import {
+  boolean,
+  index,
+  integer,
+  pgEnum,
+  pgTable,
+  primaryKey,
+  text,
+  timestamp,
+  uniqueIndex,
+  uuid,
+} from 'drizzle-orm/pg-core';
+
+const id = () => uuid('id').primaryKey().defaultRandom();
+const createdAt = () => timestamp('created_at', { withTimezone: true }).notNull().defaultNow();
+const updatedAt = () => timestamp('updated_at', { withTimezone: true }).notNull().defaultNow();
+
+export const roleEnum = pgEnum('role', ROLES);
+export const issueStatusEnum = pgEnum('issue_status', ISSUE_STATUSES);
+export const issuePriorityEnum = pgEnum('issue_priority', ISSUE_PRIORITIES);
+
+export const users = pgTable(
+  'users',
+  {
+    id: id(),
+    // Stored already-lowercased by the auth service; the unique index below is
+    // on the raw column, so normalising on write is what actually prevents
+    // `Ada@x.com` and `ada@x.com` becoming two accounts.
+    email: text('email').notNull(),
+    name: text('name').notNull(),
+    passwordHash: text('password_hash').notNull(),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [uniqueIndex('users_email_key').on(t.email)],
+);
+
+/**
+ * Opaque server-side sessions rather than stateless JWTs.
+ *
+ * The tradeoff is a database read per request, which is cheap and indexed. What
+ * it buys is immediate revocation -- signing a user out, or kicking every
+ * session after a password change -- which a self-contained JWT cannot do
+ * without a denylist that reintroduces the same lookup.
+ *
+ * Only the SHA-256 of the token is stored, so a database leak does not hand the
+ * attacker usable session cookies.
+ */
+export const sessions = pgTable(
+  'sessions',
+  {
+    id: id(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    tokenHash: text('token_hash').notNull(),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+    createdAt: createdAt(),
+    lastUsedAt: timestamp('last_used_at', { withTimezone: true }).notNull().defaultNow(),
+    userAgent: text('user_agent'),
+  },
+  (t) => [
+    uniqueIndex('sessions_token_hash_key').on(t.tokenHash),
+    index('sessions_user_id_idx').on(t.userId),
+  ],
+);
+
+export const workspaces = pgTable(
+  'workspaces',
+  {
+    id: id(),
+    name: text('name').notNull(),
+    slug: text('slug').notNull(),
+    createdBy: uuid('created_by')
+      .notNull()
+      .references(() => users.id, { onDelete: 'restrict' }),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [uniqueIndex('workspaces_slug_key').on(t.slug)],
+);
+
+/**
+ * The tenancy join table. Membership *is* authorization: if there is no row
+ * here for (workspace, user), the user cannot see the workspace exists, and the
+ * API returns 404 rather than 403 so workspace IDs aren't enumerable.
+ */
+export const workspaceMembers = pgTable(
+  'workspace_members',
+  {
+    workspaceId: uuid('workspace_id')
+      .notNull()
+      .references(() => workspaces.id, { onDelete: 'cascade' }),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    role: roleEnum('role').notNull().default('MEMBER'),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.workspaceId, t.userId] }),
+    index('workspace_members_user_id_idx').on(t.userId),
+  ],
+);
+
+export const projects = pgTable(
+  'projects',
+  {
+    id: id(),
+    workspaceId: uuid('workspace_id')
+      .notNull()
+      .references(() => workspaces.id, { onDelete: 'cascade' }),
+    /** Short uppercase prefix for issue identifiers, e.g. `REL` in `REL-104`. */
+    key: text('key').notNull(),
+    name: text('name').notNull(),
+    description: text('description'),
+    archived: boolean('archived').notNull().default(false),
+    /**
+     * Per-project issue counter. Incremented with `UPDATE ... RETURNING` inside
+     * the issue-creation transaction, which takes a row lock and therefore
+     * serialises concurrent creates. A shared Postgres sequence would be faster
+     * but would leave gaps and is not per-project.
+     */
+    issueCounter: integer('issue_counter').notNull().default(0),
+    createdBy: uuid('created_by')
+      .notNull()
+      .references(() => users.id, { onDelete: 'restrict' }),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    uniqueIndex('projects_workspace_key_key').on(t.workspaceId, t.key),
+    index('projects_workspace_id_idx').on(t.workspaceId),
+  ],
+);
+
+export const issues = pgTable(
+  'issues',
+  {
+    id: id(),
+    /**
+     * Denormalised from `projects`. Every tenant-scoped query filters on this
+     * directly, which keeps the authorization predicate on the same table as
+     * the row being read -- no join to get right, and nothing to forget.
+     */
+    workspaceId: uuid('workspace_id')
+      .notNull()
+      .references(() => workspaces.id, { onDelete: 'cascade' }),
+    projectId: uuid('project_id')
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    /** Sequential within the project; renders as `${project.key}-${number}`. */
+    number: integer('number').notNull(),
+    title: text('title').notNull(),
+    description: text('description'),
+    status: issueStatusEnum('status').notNull().default('TODO'),
+    priority: issuePriorityEnum('priority').notNull().default('NONE'),
+    assigneeId: uuid('assignee_id').references(() => users.id, { onDelete: 'set null' }),
+    createdBy: uuid('created_by')
+      .notNull()
+      .references(() => users.id, { onDelete: 'restrict' }),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    uniqueIndex('issues_project_number_key').on(t.projectId, t.number),
+    index('issues_workspace_id_idx').on(t.workspaceId),
+    index('issues_project_status_idx').on(t.projectId, t.status),
+    index('issues_assignee_idx').on(t.assigneeId),
+  ],
+);
+
+export const comments = pgTable(
+  'comments',
+  {
+    id: id(),
+    workspaceId: uuid('workspace_id')
+      .notNull()
+      .references(() => workspaces.id, { onDelete: 'cascade' }),
+    issueId: uuid('issue_id')
+      .notNull()
+      .references(() => issues.id, { onDelete: 'cascade' }),
+    authorId: uuid('author_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'restrict' }),
+    body: text('body').notNull(),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [index('comments_issue_id_idx').on(t.issueId, t.createdAt)],
+);
+
+/**
+ * Append-only activity trail. Written in the same transaction as the mutation
+ * it describes, so an event exists if and only if the change committed.
+ */
+export const auditEvents = pgTable(
+  'audit_events',
+  {
+    id: id(),
+    workspaceId: uuid('workspace_id')
+      .notNull()
+      .references(() => workspaces.id, { onDelete: 'cascade' }),
+    actorId: uuid('actor_id').references(() => users.id, { onDelete: 'set null' }),
+    entityType: text('entity_type').notNull(),
+    entityId: uuid('entity_id').notNull(),
+    eventType: text('event_type').notNull(),
+    payload: text('payload').notNull().default(sql`'{}'`),
+    createdAt: createdAt(),
+  },
+  (t) => [index('audit_events_workspace_created_idx').on(t.workspaceId, t.createdAt)],
+);
+
+export const usersRelations = relations(users, ({ many }) => ({
+  memberships: many(workspaceMembers),
+  sessions: many(sessions),
+}));
+
+export const sessionsRelations = relations(sessions, ({ one }) => ({
+  user: one(users, { fields: [sessions.userId], references: [users.id] }),
+}));
+
+export const workspacesRelations = relations(workspaces, ({ many }) => ({
+  members: many(workspaceMembers),
+  projects: many(projects),
+}));
+
+export const workspaceMembersRelations = relations(workspaceMembers, ({ one }) => ({
+  workspace: one(workspaces, {
+    fields: [workspaceMembers.workspaceId],
+    references: [workspaces.id],
+  }),
+  user: one(users, { fields: [workspaceMembers.userId], references: [users.id] }),
+}));
+
+export const projectsRelations = relations(projects, ({ one, many }) => ({
+  workspace: one(workspaces, { fields: [projects.workspaceId], references: [workspaces.id] }),
+  issues: many(issues),
+}));
+
+export const issuesRelations = relations(issues, ({ one, many }) => ({
+  project: one(projects, { fields: [issues.projectId], references: [projects.id] }),
+  assignee: one(users, { fields: [issues.assigneeId], references: [users.id] }),
+  comments: many(comments),
+}));
+
+export const commentsRelations = relations(comments, ({ one }) => ({
+  issue: one(issues, { fields: [comments.issueId], references: [issues.id] }),
+  author: one(users, { fields: [comments.authorId], references: [users.id] }),
+}));
+
+export type User = typeof users.$inferSelect;
+export type Session = typeof sessions.$inferSelect;
+export type Workspace = typeof workspaces.$inferSelect;
+export type WorkspaceMember = typeof workspaceMembers.$inferSelect;
+export type Project = typeof projects.$inferSelect;
+export type Issue = typeof issues.$inferSelect;
+export type Comment = typeof comments.$inferSelect;
+export type AuditEvent = typeof auditEvents.$inferSelect;

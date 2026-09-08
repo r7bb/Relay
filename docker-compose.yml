@@ -1,0 +1,28 @@
+# Postgres for local development, for anyone who has Docker.
+#
+# `bun run db:start` is the alternative and needs no container runtime -- it
+# runs the same Postgres from binaries fetched via npm. Both listen on 5433 with
+# the same credentials, so DATABASE_URL is identical either way. Use one or the
+# other; they cannot both hold the port.
+
+services:
+  postgres:
+    image: postgres:18-alpine
+    container_name: relay-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: relay
+      POSTGRES_PASSWORD: relay
+      POSTGRES_DB: relay
+    ports:
+      - '5433:5432'
+    volumes:
+      - relay-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U relay -d relay']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  relay-pgdata:

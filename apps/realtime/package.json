@@ -1,0 +1,19 @@
+{
+  "name": "@relay/realtime",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./gateway": "./src/gateway.ts",
+    "./presence": "./src/presence.ts"
+  },
+  "scripts": {
+    "dev": "bun --watch src/main.ts",
+    "start": "bun src/main.ts"
+  },
+  "dependencies": {
+    "@relay/auth": "workspace:*",
+    "@relay/database": "workspace:*",
+    "@relay/shared": "workspace:*"
+  }
+}

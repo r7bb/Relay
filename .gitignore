@@ -1,0 +1,17 @@
+node_modules/
+
+# Local agent/editor state
+.claude/
+.env
+.env.local
+dist/
+build/
+.next/
+out/
+coverage/
+
+# Local embedded-postgres data directory (see scripts/dev-db.ts)
+.pgdata/
+
+.DS_Store
+*.log

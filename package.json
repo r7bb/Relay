@@ -1,0 +1,36 @@
+{
+  "name": "relay",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "postinstall": "bun run scripts/fix-pg-dylibs.ts",
+    "db:start": "bun run scripts/dev-db.ts start",
+    "db:stop": "bun run scripts/dev-db.ts stop",
+    "db:reset": "bun run scripts/dev-db.ts reset",
+    "db:push": "bun --filter '@relay/database' push",
+    "db:seed": "bun run scripts/seed.ts",
+    "dev:api": "bun --watch apps/api/src/main.ts",
+    "dev:web": "bun --filter '@relay/web' dev",
+    "test": "bun test",
+    "typecheck": "tsc --noEmit -p packages/shared && tsc --noEmit -p packages/auth && tsc --noEmit -p packages/database && tsc --noEmit -p apps/api && tsc --noEmit -p apps/realtime",
+    "start:api": "bun apps/api/src/main.ts",
+    "grant:owner": "bun run scripts/grant-owner.ts",
+    "dev:realtime": "bun --watch apps/realtime/src/main.ts"
+  },
+  "devDependencies": {
+    "@relay/api": "workspace:*",
+    "@relay/auth": "workspace:*",
+    "@relay/database": "workspace:*",
+    "@relay/realtime": "workspace:*",
+    "@relay/shared": "workspace:*",
+    "@types/bun": "latest",
+    "drizzle-orm": "^0.38.0",
+    "embedded-postgres": "18.4.0-beta.17",
+    "postgres": "^3.4.9",
+    "typescript": "^5.7.0"
+  }
+}

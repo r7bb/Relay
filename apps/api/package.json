@@ -1,0 +1,24 @@
+{
+  "name": "@relay/api",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./app": "./src/app.ts",
+    "./env": "./src/env.ts"
+  },
+  "scripts": {
+    "dev": "bun --watch src/main.ts",
+    "start": "bun src/main.ts"
+  },
+  "dependencies": {
+    "@fastify/cookie": "^11.0.2",
+    "@fastify/cors": "^10.0.2",
+    "@relay/auth": "workspace:*",
+    "@relay/database": "workspace:*",
+    "@relay/shared": "workspace:*",
+    "drizzle-orm": "^0.38.0",
+    "fastify": "^5.2.0",
+    "zod": "^4.0.0"
+  }
+}
