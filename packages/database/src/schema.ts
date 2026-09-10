@@ -202,6 +202,9 @@ export const issues = pgTable(
     uniqueIndex('issues_project_number_key').on(t.projectId, t.number),
     index('issues_workspace_id_idx').on(t.workspaceId),
     index('issues_project_status_idx').on(t.projectId, t.status),
+    // Matches the keyset page query's filter and ordering exactly, so
+    // paging stays an index scan instead of a sort.
+    index('issues_project_created_idx').on(t.projectId, t.createdAt, t.id),
     index('issues_assignee_idx').on(t.assigneeId),
     index('issues_search_idx').using('gin', t.searchVector),
   ],

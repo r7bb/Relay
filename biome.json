@@ -6,7 +6,7 @@
     "useIgnoreFile": true
   },
   "files": {
-    "includes": ["**", "!**/node_modules", "!**/.next", "!**/.pgdata", "!**/migrations", "!**/docs"]
+    "includes": ["**", "!**/.*", "!**/node_modules", "!**/migrations", "!**/docs"]
   },
   "formatter": {
     "enabled": true,

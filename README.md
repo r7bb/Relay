@@ -514,6 +514,22 @@ failure mode is permissive rather than locking people out. A shared store is
 the fix when that matters. The limits are injectable, so the tests exercise the
 limiter with a budget of three instead of switching it off.
 
+### Paging by cursor, and why the cursor holds only an id
+
+`OFFSET n` re-counts from the start on every page. That is slower as pages
+deepen and, more importantly, wrong under concurrent writes: a row inserted
+before the current page shifts everything down, so the reader skips one row and
+sees another twice, with nothing in the response admitting it.
+
+The cursor names the last row seen instead. What it deliberately does *not*
+carry is that row's timestamp. Postgres stores `timestamptz` to microseconds
+and a JavaScript `Date` holds milliseconds, so round-tripping the sort key
+through JSON truncates it — the cursor lands fractionally before the row it
+names and the next page steps over everything in the gap. Invisible until
+several rows share a millisecond, which is exactly what a burst of concurrent
+inserts produces. Resolving the sort key from the id inside the query costs one
+primary-key lookup and removes the conversion entirely.
+
 ### Sessions are opaque, not JWTs
 
 Session lookup costs one indexed read per request. In exchange, signing out
@@ -535,7 +551,7 @@ body.
 
 ## Testing
 
-**209 tests** against a real Postgres rather than mocks. The behaviour under test
+**219 tests** against a real Postgres rather than mocks. The behaviour under test
 — unique constraints, cascades, row locks, transactional `NOTIFY` — is behaviour
 the database provides, so a fake would only prove the fake works.
 
@@ -559,6 +575,7 @@ bun test
 | `nudges.test.ts`        | Rule ordering, weekly dedupe, redelivery, spam resistance        |
 | `search.test.ts`        | Stemming, ranking, index freshness, tenant isolation             |
 | `rate-limit.test.ts`    | Budgets, headers, per-caller isolation, retryability             |
+| `pagination.test.ts`    | Keyset paging, stability under concurrent inserts and deletes    |
 | `idempotency.test.ts`   | Exactly-once mutations, key misuse, client-generated ids         |
 
 The ones worth reading are adversarial: pasting another tenant's project id into
@@ -585,7 +602,7 @@ ceiling, a socket subscribing to a workspace it doesn't belong to, and the
 - Full-text search over issues, comments and documents
 - Member management UI and rate limiting on credential endpoints
 - Next.js client with optimistic updates
-- 209 tests, CI, linting, typechecking
+- 219 tests, CI, linting, typechecking
 
 **Next**
 

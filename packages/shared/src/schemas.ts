@@ -120,7 +120,15 @@ export const listIssuesQuerySchema = z.object({
   status: z.enum(ISSUE_STATUSES).optional(),
   assigneeId: uuid.optional(),
   limit: z.coerce.number().int().min(1).max(100).default(50),
-  cursor: z.coerce.number().int().min(0).default(0),
+  /**
+   * Opaque keyset cursor, echoed back from a previous page.
+   *
+   * Not a row offset. `OFFSET n` re-counts from the start on every page, so an
+   * insert between requests shifts every later row: the reader silently skips
+   * one and sees another twice. A cursor names the last row seen, which is
+   * stable regardless of what else is written.
+   */
+  cursor: z.string().max(200).optional(),
 });
 
 export const createCommentSchema = z.object({

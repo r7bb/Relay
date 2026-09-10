@@ -2,7 +2,7 @@
 
 Where Relay is, what is left, and what is deliberately not being built.
 
-Status as of the current commit: **209 tests, lint and typecheck clean, CI green.**
+Status as of the current commit: **219 tests, lint and typecheck clean, CI green.**
 
 ---
 
@@ -118,8 +118,7 @@ Honest list of things that are built but thin.
   with no pagination or filtering by kind.
 - **No password reset or email verification** — both need the mailer from
   milestone 6.
-- **Issue list pagination is offset-based.** Fine at this size, but it will skip
-  and duplicate rows under concurrent inserts; cursor pagination is the fix.
+- **No load-test numbers yet.** The README describes behaviour, not throughput.
 
 ---
 

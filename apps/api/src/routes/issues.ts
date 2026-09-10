@@ -1,7 +1,9 @@
 import {
   auditEvents,
   type Database,
+  decodeCursor,
   type Executor,
+  encodeCursor,
   issues,
   projects,
   publishEvent,
@@ -72,6 +74,24 @@ export async function issueRoutes(app: FastifyInstance, opts: { db: Database }) 
       if (query.status) filters.push(eq(issues.status, query.status));
       if (query.assigneeId) filters.push(eq(issues.assigneeId, query.assigneeId));
 
+      /*
+       * Keyset paging: take rows strictly "after" the cursor in the sort
+       * order, rather than skipping a count. `(created_at, id) < (...)` is a
+       * row comparison, which Postgres can satisfy straight from the
+       * composite index -- and `id` is the tiebreaker, because two issues
+       * created in the same millisecond would otherwise page unstably.
+       */
+      const cursorId = decodeCursor(query.cursor);
+      if (cursorId) {
+        // The sort key is read back from the row rather than carried in the
+        // cursor, so no timestamp precision is lost in transit.
+        filters.push(
+          sql`(${issues.createdAt}, ${issues.id}) < (
+            select created_at, id from issues where id = ${cursorId}::uuid
+          )`,
+        );
+      }
+
       const rows = await db
         .select({
           id: issues.id,
@@ -90,13 +110,15 @@ export async function issueRoutes(app: FastifyInstance, opts: { db: Database }) 
         .from(issues)
         .leftJoin(users, eq(users.id, issues.assigneeId))
         .where(and(...filters))
-        .orderBy(desc(issues.createdAt))
-        .limit(query.limit)
-        .offset(query.cursor);
+        .orderBy(desc(issues.createdAt), desc(issues.id))
+        .limit(query.limit);
+
+      const last = rows.at(-1);
 
       return {
         issues: rows.map((r) => ({ ...r, key: `${project.key}-${r.number}` })),
-        nextCursor: rows.length === query.limit ? query.cursor + rows.length : null,
+        // A full page implies there may be more; a short page is the end.
+        nextCursor: rows.length === query.limit && last ? encodeCursor(last.id) : null,
       };
     },
   );
