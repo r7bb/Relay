@@ -1,4 +1,4 @@
-import { comments, type Database, issues, publishEvent, users } from '@relay/database';
+import { comments, type Database, enqueue, issues, publishEvent, users } from '@relay/database';
 import { can, createCommentSchema } from '@relay/shared';
 import { and, asc, eq } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
@@ -63,10 +63,18 @@ export async function commentRoutes(app: FastifyInstance, opts: { db: Database }
 
       if (!issue) throw ApiError.notFound('Issue not found');
 
-      const [created] = await db
-        .insert(comments)
-        .values({ workspaceId, issueId, authorId: user.id, body: input.body })
-        .returning();
+      // The insert and the notification job commit together: no window where
+      // the comment exists but nobody is told, and no job for a comment that
+      // rolled back. This is the reason the queue lives in Postgres.
+      const created = await db.transaction(async (tx) => {
+        const [row] = await tx
+          .insert(comments)
+          .values({ workspaceId, issueId, authorId: user.id, body: input.body })
+          .returning();
+
+        await enqueue(tx, 'notify.mentions', { commentId: row!.id });
+        return row;
+      });
 
       await publishEvent(db, {
         type: 'comment.created',

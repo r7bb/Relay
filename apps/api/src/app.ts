@@ -10,6 +10,7 @@ import { commentRoutes } from './routes/comments.ts';
 import { documentRoutes } from './routes/documents.ts';
 import { issueRoutes } from './routes/issues.ts';
 import { memberRoutes } from './routes/members.ts';
+import { notificationRoutes } from './routes/notifications.ts';
 import { projectRoutes } from './routes/projects.ts';
 import { workspaceRoutes } from './routes/workspaces.ts';
 
@@ -63,6 +64,7 @@ export function buildApp({ db, env, logger = false }: AppDeps): FastifyInstance 
   app.register(issueRoutes, { db });
   app.register(commentRoutes, { db });
   app.register(documentRoutes, { db });
+  app.register(notificationRoutes, { db });
 
   return app;
 }

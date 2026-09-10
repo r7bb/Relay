@@ -288,6 +288,91 @@ export const documentUpdates = pgTable(
 );
 
 /**
+ * Background job queue.
+ *
+ * Postgres rather than Redis + BullMQ, for the same reason `NOTIFY` replaced
+ * Redis pub/sub: enqueueing can join the transaction that caused it. A comment
+ * insert and the notification job it schedules commit together or not at all,
+ * so there is no window where the comment exists and the job was lost, or the
+ * job fires for a comment that rolled back. An external broker cannot offer
+ * that without an outbox table -- which is what this already is.
+ *
+ * Claiming uses `FOR UPDATE SKIP LOCKED`, so N workers take disjoint batches
+ * without blocking each other or needing a coordinator.
+ *
+ * What Postgres does not give: this polls rather than blocking on a socket, so
+ * latency is bounded by the poll interval, and throughput is bounded by the
+ * database. At the point either of those hurts, a dedicated broker is the
+ * answer -- but the enqueue-in-transaction guarantee is worth giving up last.
+ */
+export const jobs = pgTable(
+  'jobs',
+  {
+    id: id(),
+    kind: text('kind').notNull(),
+    payload: text('payload').notNull().default(sql`'{}'`),
+    /** Earliest time this may run. Backoff pushes it forward on failure. */
+    runAt: timestamp('run_at', { withTimezone: true }).notNull().defaultNow(),
+    attempts: integer('attempts').notNull().default(0),
+    maxAttempts: integer('max_attempts').notNull().default(5),
+    /**
+     * Set when a worker claims the job. A crashed worker leaves this behind,
+     * so anything held past the visibility timeout is reclaimed.
+     */
+    lockedAt: timestamp('locked_at', { withTimezone: true }),
+    lockedBy: text('locked_by'),
+    /** `pending` until it exhausts its attempts, then `failed` (dead letter). */
+    status: text('status').notNull().default('pending'),
+    lastError: text('last_error'),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    // The claim query's exact predicate and ordering, so it stays an index
+    // scan as the table grows.
+    index('jobs_claim_idx').on(t.status, t.runAt),
+  ],
+);
+
+/**
+ * A thing that happened which someone should see.
+ *
+ * Written by a worker rather than in the request that caused it: fanning out
+ * to every mentioned user inline would make posting a comment slower the more
+ * people it mentions, and a failure in notification delivery would roll back
+ * the comment itself.
+ */
+export const notifications = pgTable(
+  'notifications',
+  {
+    id: id(),
+    workspaceId: uuid('workspace_id')
+      .notNull()
+      .references(() => workspaces.id, { onDelete: 'cascade' }),
+    /** Recipient. */
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    actorId: uuid('actor_id').references(() => users.id, { onDelete: 'set null' }),
+    kind: text('kind').notNull(),
+    entityType: text('entity_type').notNull(),
+    entityId: uuid('entity_id').notNull(),
+    payload: text('payload').notNull().default(sql`'{}'`),
+    readAt: timestamp('read_at', { withTimezone: true }),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    // Unread-first inbox for one user, which is the only way this is read.
+    index('notifications_user_created_idx').on(t.userId, t.createdAt),
+    /**
+     * What makes redelivery safe. The queue is at-least-once, so the mention
+     * handler can run twice for one comment; this turns the second insert into
+     * a no-op instead of a duplicate in someone's inbox.
+     */
+    uniqueIndex('notifications_dedupe_key').on(t.userId, t.kind, t.entityId),
+  ],
+);
+
+/**
  * Idempotency ledger.
  *
  * An offline client retries whatever is still in its queue when it reconnects,
@@ -369,5 +454,7 @@ export type Issue = typeof issues.$inferSelect;
 export type Comment = typeof comments.$inferSelect;
 export type AuditEvent = typeof auditEvents.$inferSelect;
 export type Mutation = typeof mutations.$inferSelect;
+export type Job = typeof jobs.$inferSelect;
+export type Notification = typeof notifications.$inferSelect;
 export type Document = typeof documents.$inferSelect;
 export type DocumentUpdate = typeof documentUpdates.$inferSelect;

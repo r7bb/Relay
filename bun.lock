@@ -17,6 +17,7 @@
         "@relay/realtime": "workspace:*",
         "@relay/shared": "workspace:*",
         "@relay/sync": "workspace:*",
+        "@relay/worker": "workspace:*",
         "@types/bun": "latest",
         "drizzle-orm": "^0.38.0",
         "embedded-postgres": "18.4.0-beta.17",
@@ -71,6 +72,16 @@
         "postcss": "^8.4.49",
         "tailwindcss": "^3.4.17",
         "typescript": "^5.9.3",
+      },
+    },
+    "apps/worker": {
+      "name": "@relay/worker",
+      "version": "0.0.0",
+      "dependencies": {
+        "@relay/auth": "workspace:*",
+        "@relay/database": "workspace:*",
+        "@relay/shared": "workspace:*",
+        "drizzle-orm": "^0.38.0",
       },
     },
     "packages/auth": {
@@ -348,6 +359,8 @@
     "@relay/sync": ["@relay/sync@workspace:packages/sync"],
 
     "@relay/web": ["@relay/web@workspace:apps/web"],
+
+    "@relay/worker": ["@relay/worker@workspace:apps/worker"],
 
     "@swc/helpers": ["@swc/helpers@0.5.15", "", { "dependencies": { "tslib": "^2.8.0" } }, "sha512-JQ5TuMi45Owi4/BIMAJBoSQoOJu12oOk/gADqlcUL9JEdHB8vyjUSsxqeNXnmXHjYKMi2WcYtezGEEhqUI/E2g=="],
 

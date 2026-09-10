@@ -6,6 +6,7 @@ export * from './documents.ts';
 export * from './events.ts';
 export * from './presence-bus.ts';
 export * from './queries.ts';
+export * from './queue.ts';
 export * from './schema.ts';
 export { schema };
 

@@ -2,7 +2,7 @@
 
 Where Relay is, what is left, and what is deliberately not being built.
 
-Status as of the current commit: **117 tests, lint and typecheck clean, CI green.**
+Status as of the current commit: **154 tests, lint and typecheck clean, CI green.**
 
 ---
 
@@ -63,24 +63,26 @@ last-write-wins per field; concurrent edits to the *same paragraph* do not.
 - [x] Service worker so the app shell loads with no network. Network-first for
       navigations, cache-first for fingerprinted assets, never for API traffic
 - [ ] Rate limiting on auth and mutation endpoints
-- [ ] Session cleanup job for expired rows
 - [ ] Docker verified end to end (compose file exists but has never run here —
       no container runtime on this machine)
 
 ---
 
-## Remaining
+### 6 · Background work *(mostly done)*
 
-### 6 · Background work
-
-- [ ] Job queue. The plan called for BullMQ + Redis; Postgres `SKIP LOCKED`
-      is the likely substitute, for the same reasons NOTIFY replaced Redis
-      pub/sub — one fewer service, and the enqueue can join the transaction
-      that caused it
-- [ ] Notifications: `@mention` parsing, in-app inbox, email delivery
+- [x] Job queue on Postgres `SKIP LOCKED` — backoff, dead-letter, visibility
+      timeout, and enqueue that joins the caller's transaction
+- [x] `@mention` parsing and in-app notifications, delivered by a worker
+- [x] Session cleanup as a self-rescheduling job
+- [ ] Notification UI — the API and worker are done, nothing renders the inbox
+- [ ] Email delivery (needs an SMTP target)
 - [ ] File attachments via presigned URLs (needs an S3-compatible target)
 - [ ] Search — Postgres full-text first, with a documented comparison against
       a dedicated engine rather than adopting one reflexively
+
+---
+
+## Remaining
 
 ### 8 · Operations
 
@@ -99,6 +101,8 @@ Honest list of things that are built but thin.
   route for a single issue.
 - **Comments have no UI.** The API, permissions and realtime events are done and
   tested; nothing renders them.
+- **Notifications have no UI.** Same shape: queue, worker, inbox API and tests
+  all exist, but nothing displays them.
 - **Board uses a status dropdown, not drag-and-drop.**
 - **Offline covers the board only.** The app shell is cached, but other routes
   still fetch their data and will show the offline fallback if visited cold.

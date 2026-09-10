@@ -36,9 +36,10 @@ bun run db:seed      # 1 account, 2 projects, 10 issues
 Each in its own terminal:
 
 ```bash
-bun run dev:api        # REST API        → http://localhost:4000
+bun run dev:api        # REST API          → http://localhost:4000
 bun run dev:realtime   # WebSocket gateway → ws://localhost:4001/ws
-bun run dev:web        # Next.js client  → http://localhost:3000
+bun run dev:web        # Next.js client    → http://localhost:3000
+bun run dev:worker     # Background jobs   (optional; needed for @mentions)
 ```
 
 ### 4. Sign in
@@ -149,6 +150,7 @@ seeded.
 | `bun run dev:api`       | REST API on :4000                             |
 | `bun run dev:realtime`  | WebSocket gateway on :4001                    |
 | `bun run dev:web`       | Next.js client on :3000                       |
+| `bun run dev:worker`    | Background job worker                         |
 | `bun test`              | Full suite against a real Postgres            |
 | `bun run typecheck`     | Typecheck every package                       |
 | `bun run lint`          | Biome lint + format check                     |
@@ -196,6 +198,7 @@ same port; skip `db:start` in that case.
 apps/
   api/          Fastify: routes, guards, mutations
   realtime/     Bun WebSocket gateway: fan-out, presence, document rooms
+  worker/       Background job runner and handlers
   web/          Next.js client
 packages/
   shared/       Permission matrix, domain enums, wire contracts
@@ -381,6 +384,29 @@ actually succeeded. Retries keep running whenever an interface exists, because
 a failure is exactly the state that needs re-testing and a recovering server
 emits no `online` event to wake anything up.
 
+### The job queue is Postgres, for the same reason the event bus is
+
+`SKIP LOCKED` gives multi-worker claiming without a broker: each worker's
+transaction locks the rows it selects and skips rows another worker already
+holds, so batches are disjoint with no coordinator.
+
+The reason to prefer it here is the same one that chose `NOTIFY` over Redis --
+**enqueue can join the transaction that caused it**. Posting a comment inserts
+the row and schedules its notification job atomically, so there is no window
+where the comment exists and the job was lost, and no job for a comment that
+rolled back. An external broker needs an outbox table to match that, which is
+what this already is.
+
+Delivery is at-least-once: a worker that stalls past the visibility timeout has
+its job reclaimed and re-run, so handlers must be idempotent. The mention
+handler relies on a unique index over `(user_id, kind, entity_id)` to make a
+redelivery a no-op rather than a second notification — there is
+[a test](tests/queue.test.ts) that runs it three times and asserts one row.
+
+What Postgres does not give: this polls rather than blocking on a socket, and
+throughput is bounded by the database. Those are the numbers to watch before
+reaching for a broker.
+
 ### Sessions are opaque, not JWTs
 
 Session lookup costs one indexed read per request. In exchange, signing out
@@ -402,7 +428,7 @@ body.
 
 ## Testing
 
-**117 tests** against a real Postgres rather than mocks. The behaviour under test
+**154 tests** against a real Postgres rather than mocks. The behaviour under test
 — unique constraints, cascades, row locks, transactional `NOTIFY` — is behaviour
 the database provides, so a fake would only prove the fake works.
 
@@ -420,6 +446,8 @@ bun test
 | `sync.test.ts`          | Offline queue, retry, poison messages, convergence               |
 | `documents.test.ts`     | CRDT convergence, compaction, persistence round-trips            |
 | `text.test.ts`          | Textarea-to-CRDT edit extraction, 500 randomised round-trips     |
+| `queue.test.ts`         | `SKIP LOCKED` claiming, backoff, dead-letter, mention delivery   |
+| `mentions.test.ts`      | Mention parsing, ambiguity, emails-in-prose false positives      |
 | `idempotency.test.ts`   | Exactly-once mutations, key misuse, client-generated ids         |
 
 The ones worth reading are adversarial: pasting another tenant's project id into
@@ -440,12 +468,13 @@ ceiling, a socket subscribing to a workspace it doesn't belong to, and the
 - Offline-first board: IndexedDB store, durable mutation queue, exactly-once sync
 - Service worker so the app shell loads with no network
 - CRDT documents (Yjs) with live cursors, stored as an append-only update log
+- Background job queue on Postgres `SKIP LOCKED`, with `@mention` notifications
 - Next.js client with optimistic updates
-- 117 tests, CI, linting, typechecking
+- 154 tests, CI, linting, typechecking
 
 **Next**
 
-- Background jobs, notifications, search, file uploads
+- Notification UI, search, file uploads
 - Rate limiting on auth and mutation endpoints
 - Load testing and OpenTelemetry
 
