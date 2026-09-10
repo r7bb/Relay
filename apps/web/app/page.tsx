@@ -20,7 +20,5 @@ export default function Home() {
     router.replace(isError || !data ? '/login' : '/workspaces');
   }, [data, isError, isPending, router]);
 
-  return (
-    <main className="grid min-h-screen place-items-center text-sm text-slate-500">Loading…</main>
-  );
+  return <main className="grid min-h-screen place-items-center text-sm text-faint">Loading…</main>;
 }

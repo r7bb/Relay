@@ -10,7 +10,7 @@
 export function SyncStatus({ online, pending }: { online: boolean; pending: number }) {
   if (online && pending === 0) {
     return (
-      <span className="flex items-center gap-1.5 text-xs text-slate-500">
+      <span className="flex items-center gap-1.5 text-xs text-faint">
         <span aria-hidden className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
         Synced
       </span>

@@ -20,6 +20,7 @@ import {
   type WorkspaceSummary,
 } from '../../../../../lib/api.ts';
 import { useRealtime } from '../../../../../lib/realtime.ts';
+import { lastTheme, useApplyTheme } from '../../../../../lib/theme.ts';
 
 const STATUS_LABELS: Record<IssueStatus, string> = {
   TODO: 'Todo',
@@ -47,6 +48,8 @@ export default function IssuePage() {
     queryKey: ['workspace', workspaceId],
     queryFn: () => api<{ workspace: WorkspaceSummary }>(`/workspaces/${workspaceId}`),
   });
+
+  useApplyTheme(workspace.data?.workspace.theme ?? lastTheme());
 
   const issue = useQuery({
     queryKey: issueKey,
@@ -82,12 +85,12 @@ export default function IssuePage() {
 
   return (
     <main className="mx-auto max-w-4xl px-6 py-12">
-      <nav className="text-sm text-slate-500">
-        <Link href="/workspaces" className="hover:text-slate-300">
+      <nav className="text-sm text-faint">
+        <Link href="/workspaces" className="hover:text-muted">
           Workspaces
         </Link>
         <span className="mx-2">/</span>
-        <Link href={`/workspaces/${workspaceId}`} className="hover:text-slate-300">
+        <Link href={`/workspaces/${workspaceId}`} className="hover:text-muted">
           {workspace.data?.workspace.name ?? '…'}
         </Link>
         {data && (
@@ -95,14 +98,14 @@ export default function IssuePage() {
             <span className="mx-2">/</span>
             <Link
               href={`/workspaces/${workspaceId}/projects/${data.projectId}`}
-              className="hover:text-slate-300"
+              className="hover:text-muted"
             >
               Board
             </Link>
           </>
         )}
         <span className="mx-2">/</span>
-        <span className="font-mono text-slate-300">{data?.key ?? '…'}</span>
+        <span className="font-mono text-muted">{data?.key ?? '…'}</span>
       </nav>
 
       <div className="mt-4 flex justify-end">
@@ -114,8 +117,8 @@ export default function IssuePage() {
           {title === null ? (
             <h1
               className={[
-                'mt-4 text-2xl font-semibold tracking-tight text-white',
-                canEdit ? 'cursor-text rounded px-1 -mx-1 hover:bg-surface-raised' : '',
+                'mt-4 text-2xl font-semibold tracking-tight text-content',
+                canEdit ? 'cursor-text rounded px-1 -mx-1 hover:bg-raised' : '',
               ].join(' ')}
               onClick={() => canEdit && setTitle(data.title)}
               onKeyDown={(event) => {
@@ -135,7 +138,7 @@ export default function IssuePage() {
                 onChange={(event) => setTitle(event.target.value)}
                 onBlur={saveTitle}
                 aria-label="Issue title"
-                className="w-full rounded-md border border-surface-border bg-surface-raised px-3 py-2 text-2xl font-semibold text-white outline-none focus:border-indigo-500"
+                className="w-full rounded-md border border-line bg-raised px-3 py-2 text-2xl font-semibold text-content outline-none focus:border-accent"
               />
             </form>
           )}
@@ -201,7 +204,7 @@ export default function IssuePage() {
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div>
-      <dt className="mb-1 text-xs font-medium uppercase tracking-wide text-slate-500">{label}</dt>
+      <dt className="mb-1 text-xs font-medium uppercase tracking-wide text-faint">{label}</dt>
       <dd>{children}</dd>
     </div>
   );
@@ -223,7 +226,7 @@ function Select({
       value={value}
       disabled={disabled}
       onChange={(event) => onChange(event.target.value)}
-      className="w-full rounded-md border border-surface-border bg-surface-raised px-2 py-1.5 text-sm capitalize text-slate-200 outline-none focus:border-indigo-500 disabled:opacity-60"
+      className="w-full rounded-md border border-line bg-raised px-2 py-1.5 text-sm capitalize text-content outline-none focus:border-accent disabled:opacity-60"
     >
       {options.map((option) => (
         <option key={option.value} value={option.value}>

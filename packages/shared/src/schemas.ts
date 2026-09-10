@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { ISSUE_PRIORITIES, ISSUE_STATUSES } from './domain.ts';
 import { ROLES } from './rbac.ts';
+import { THEME_IDS } from './themes.ts';
 
 /**
  * Wire contracts shared by the API and the web client. The API validates every
@@ -44,9 +45,13 @@ export const createWorkspaceSchema = z.object({
 });
 export type CreateWorkspaceInput = z.infer<typeof createWorkspaceSchema>;
 
-export const updateWorkspaceSchema = z.object({
-  name: z.string().min(1).max(80).trim(),
-});
+export const updateWorkspaceSchema = z
+  .object({
+    name: z.string().min(1).max(80).trim(),
+    theme: z.enum(THEME_IDS),
+  })
+  .partial()
+  .refine((v) => Object.keys(v).length > 0, { message: 'No fields to update' });
 
 export const inviteMemberSchema = z.object({
   email: z.email().max(254).toLowerCase().trim(),

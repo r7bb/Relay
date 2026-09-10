@@ -19,15 +19,31 @@ const runner = new Runner({ db, handlers });
  */
 const HOUR_MS = 60 * 60 * 1000;
 
+/**
+ * How often to look for people worth nudging. Frequent enough that a new
+ * account gets a prompt the same session, rare enough that the weekly dedupe
+ * bucket does the real rate limiting.
+ */
+const NUDGE_INTERVAL_MS = Number(process.env.NUDGE_INTERVAL_MS ?? 15 * 60 * 1000);
+
 async function scheduleMaintenance() {
   await enqueue(db, 'sessions.cleanup', {}, { delayMs: HOUR_MS });
+  await enqueue(db, 'nudges.scan', {}, { delayMs: NUDGE_INTERVAL_MS });
 }
 
-handlers['sessions.cleanup'] = async (_payload, context) => {
-  const { deleteExpiredSessions } = await import('@relay/auth');
-  await deleteExpiredSessions(context.db);
-  await scheduleMaintenance();
+// Recurring jobs re-enqueue themselves after running, which keeps the schedule
+// next to the work instead of in a separate cron process.
+const reschedule = <T extends keyof typeof handlers>(kind: T, delayMs: number) => {
+  const original = handlers[kind]!;
+
+  handlers[kind] = async (payload, context) => {
+    await original(payload, context);
+    await enqueue(context.db, kind, {}, { delayMs });
+  };
 };
+
+reschedule('sessions.cleanup', HOUR_MS);
+reschedule('nudges.scan', NUDGE_INTERVAL_MS);
 
 await scheduleMaintenance();
 

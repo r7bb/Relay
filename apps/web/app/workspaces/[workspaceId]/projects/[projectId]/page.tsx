@@ -10,6 +10,7 @@ import { SyncStatus } from '../../../../../components/sync-status.tsx';
 import { ErrorState } from '../../../../../components/ui.tsx';
 import { api, type WorkspaceSummary } from '../../../../../lib/api.ts';
 import { useRealtime } from '../../../../../lib/realtime.ts';
+import { lastTheme, useApplyTheme } from '../../../../../lib/theme.ts';
 import { useOfflineBoard } from '../../../../../lib/use-offline-board.ts';
 
 const COLUMN_LABELS: Record<IssueStatus, string> = {
@@ -39,6 +40,8 @@ export default function BoardPage() {
     queryFn: () => api<{ workspace: WorkspaceSummary }>(`/workspaces/${workspaceId}`),
   });
 
+  useApplyTheme(workspace.data?.workspace.theme ?? lastTheme());
+
   // Reconnecting means we may have missed events while the socket was down.
   const { refresh } = board;
   useEffect(() => {
@@ -61,16 +64,16 @@ export default function BoardPage() {
 
   return (
     <main className="mx-auto max-w-6xl px-6 py-12">
-      <nav className="text-sm text-slate-500">
-        <Link href="/workspaces" className="hover:text-slate-300">
+      <nav className="text-sm text-faint">
+        <Link href="/workspaces" className="hover:text-muted">
           Workspaces
         </Link>
         <span className="mx-2">/</span>
-        <Link href={`/workspaces/${workspaceId}`} className="hover:text-slate-300">
+        <Link href={`/workspaces/${workspaceId}`} className="hover:text-muted">
           {workspace.data?.workspace.name ?? '…'}
         </Link>
         <span className="mx-2">/</span>
-        <span className="text-slate-300">Board</span>
+        <span className="text-muted">Board</span>
       </nav>
 
       <div className="mt-4 flex items-center justify-between gap-4">
@@ -84,12 +87,12 @@ export default function BoardPage() {
             value={title}
             onChange={(event) => setTitle(event.target.value)}
             placeholder="What needs doing?"
-            className="flex-1 rounded-md border border-surface-border bg-surface-raised px-3 py-2 text-sm outline-none focus:border-indigo-500"
+            className="flex-1 rounded-md border border-line bg-raised px-3 py-2 text-sm outline-none focus:border-accent"
           />
           <button
             type="submit"
             disabled={!title.trim()}
-            className="rounded-md bg-indigo-500 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-400 disabled:opacity-50"
+            className="rounded-md bg-accent px-4 py-2 text-sm font-medium text-accent-contrast hover:bg-accent-hover disabled:opacity-50"
           >
             Add issue
           </button>
@@ -101,13 +104,10 @@ export default function BoardPage() {
           const columnIssues = board.issues.filter((issue) => issue.status === column);
 
           return (
-            <section
-              key={column}
-              className="rounded-lg border border-surface-border bg-surface-raised/50 p-3"
-            >
-              <h2 className="flex items-baseline justify-between text-xs font-medium uppercase tracking-wide text-slate-400">
+            <section key={column} className="rounded-lg border border-line bg-raised/50 p-3">
+              <h2 className="flex items-baseline justify-between text-xs font-medium uppercase tracking-wide text-muted">
                 {COLUMN_LABELS[column]}
-                <span className="text-slate-600">{columnIssues.length}</span>
+                <span className="text-faint">{columnIssues.length}</span>
               </h2>
 
               <ul className="mt-3 space-y-2">
@@ -115,12 +115,12 @@ export default function BoardPage() {
                   <li
                     key={issue.id}
                     className={[
-                      'rounded-md border bg-surface-raised p-3',
-                      issue.pending ? 'border-amber-500/40' : 'border-surface-border',
+                      'rounded-md border bg-raised p-3',
+                      issue.pending ? 'border-amber-500/40' : 'border-line',
                     ].join(' ')}
                   >
                     <div className="flex items-baseline justify-between gap-2">
-                      <span className="font-mono text-[10px] text-slate-500">{issue.key}</span>
+                      <span className="font-mono text-[10px] text-faint">{issue.key}</span>
 
                       {issue.pending ? (
                         <span
@@ -141,18 +141,18 @@ export default function BoardPage() {
                     {/* Offline-created issues have no server row yet, so
                         there is nothing to open until they sync. */}
                     {issue.pending ? (
-                      <p className="mt-1 text-sm text-slate-200">{issue.title}</p>
+                      <p className="mt-1 text-sm text-content">{issue.title}</p>
                     ) : (
                       <Link
                         href={`/workspaces/${workspaceId}/issues/${issue.id}`}
-                        className="mt-1 block text-sm text-slate-200 hover:text-white hover:underline"
+                        className="mt-1 block text-sm text-content hover:text-content hover:underline"
                       >
                         {issue.title}
                       </Link>
                     )}
 
                     {issue.assigneeName && (
-                      <p className="mt-2 text-xs text-slate-500">{issue.assigneeName}</p>
+                      <p className="mt-2 text-xs text-faint">{issue.assigneeName}</p>
                     )}
 
                     {canEdit && (
@@ -164,7 +164,7 @@ export default function BoardPage() {
                           })
                         }
                         aria-label={`Status for ${issue.key}`}
-                        className="mt-3 w-full rounded border border-surface-border bg-surface px-2 py-1 text-xs text-slate-300 outline-none focus:border-indigo-500"
+                        className="mt-3 w-full rounded border border-line bg-surface px-2 py-1 text-xs text-muted outline-none focus:border-accent"
                       >
                         {BOARD_COLUMNS.map((status) => (
                           <option key={status} value={status}>

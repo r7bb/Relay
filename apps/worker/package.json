@@ -5,7 +5,8 @@
   "type": "module",
   "exports": {
     "./runner": "./src/runner.ts",
-    "./handlers": "./src/handlers.ts"
+    "./handlers": "./src/handlers.ts",
+    "./nudges": "./src/nudges.ts"
   },
   "scripts": {
     "dev": "bun --watch src/main.ts",

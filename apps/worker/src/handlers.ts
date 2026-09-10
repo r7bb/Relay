@@ -10,6 +10,7 @@ import {
 } from '@relay/database';
 import { resolveMentions } from '@relay/shared';
 import { and, eq, ne } from 'drizzle-orm';
+import { scanNudges } from './nudges.ts';
 import type { Handlers } from './runner.ts';
 
 /**
@@ -90,6 +91,8 @@ export const notifyMentions = async (payload: unknown, { db }: { db: Database })
         kind: 'mention',
         entityType: 'comment',
         entityId: comment.id,
+        // Keyed on the comment, so a redelivered job is a no-op.
+        dedupeKey: `mention:${comment.id}`,
         payload: JSON.stringify({
           issueId: comment.issueId,
           issueKey: project && issue ? `${project.key}-${issue.number}` : null,
@@ -99,10 +102,8 @@ export const notifyMentions = async (payload: unknown, { db }: { db: Database })
       })),
     )
     // Idempotency: a redelivered job must not notify twice. The unique index
-    // on (user_id, kind, entity_id) is what makes this a no-op.
-    .onConflictDoNothing({
-      target: [notifications.userId, notifications.kind, notifications.entityId],
-    });
+    // on (user_id, dedupe_key) is what makes this a no-op.
+    .onConflictDoNothing({ target: [notifications.userId, notifications.dedupeKey] });
 };
 
 /** Delete session rows that have already expired. */
@@ -110,7 +111,13 @@ export const cleanupSessions = async (_payload: unknown, { db }: { db: Database 
   await deleteExpiredSessions(db);
 };
 
+/** Periodic scan that decides who could use a prompt. See `nudges.ts`. */
+export const runNudgeScan = async (_payload: unknown, { db }: { db: Database }) => {
+  await scanNudges(db);
+};
+
 export const handlers: Handlers = {
   'notify.mentions': notifyMentions,
   'sessions.cleanup': cleanupSessions,
+  'nudges.scan': runNudgeScan,
 };

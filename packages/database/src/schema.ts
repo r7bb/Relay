@@ -86,6 +86,12 @@ export const workspaces = pgTable(
     id: id(),
     name: text('name').notNull(),
     slug: text('slug').notNull(),
+    /**
+     * Presentation only, so it is a plain string rather than an enum: adding a
+     * theme should be a code change, not a migration, and an id the client no
+     * longer recognises falls back rather than failing.
+     */
+    theme: text('theme').notNull().default('midnight'),
     createdBy: uuid('created_by')
       .notNull()
       .references(() => users.id, { onDelete: 'restrict' }),
@@ -345,9 +351,9 @@ export const notifications = pgTable(
   'notifications',
   {
     id: id(),
-    workspaceId: uuid('workspace_id')
-      .notNull()
-      .references(() => workspaces.id, { onDelete: 'cascade' }),
+    /** Null for notifications that are not about a workspace, such as a nudge
+     * telling someone to create their first one. */
+    workspaceId: uuid('workspace_id').references(() => workspaces.id, { onDelete: 'cascade' }),
     /** Recipient. */
     userId: uuid('user_id')
       .notNull()
@@ -355,7 +361,18 @@ export const notifications = pgTable(
     actorId: uuid('actor_id').references(() => users.id, { onDelete: 'set null' }),
     kind: text('kind').notNull(),
     entityType: text('entity_type').notNull(),
-    entityId: uuid('entity_id').notNull(),
+    /** Null for notifications that are not about a row, such as nudges. */
+    entityId: uuid('entity_id'),
+    /**
+     * Collision key for "do not send this twice".
+     *
+     * A mention uses the comment id, so redelivering the job is a no-op. A
+     * nudge uses its kind plus a time bucket, so it can recur next week but
+     * never twice in the same one. Encoding the rule in the value rather than
+     * the index is what lets those two very different policies share one
+     * constraint.
+     */
+    dedupeKey: text('dedupe_key').notNull(),
     payload: text('payload').notNull().default(sql`'{}'`),
     readAt: timestamp('read_at', { withTimezone: true }),
     createdAt: createdAt(),
@@ -363,12 +380,7 @@ export const notifications = pgTable(
   (t) => [
     // Unread-first inbox for one user, which is the only way this is read.
     index('notifications_user_created_idx').on(t.userId, t.createdAt),
-    /**
-     * What makes redelivery safe. The queue is at-least-once, so the mention
-     * handler can run twice for one comment; this turns the second insert into
-     * a no-op instead of a duplicate in someone's inbox.
-     */
-    uniqueIndex('notifications_dedupe_key').on(t.userId, t.kind, t.entityId),
+    uniqueIndex('notifications_dedupe_key').on(t.userId, t.dedupeKey),
   ],
 );
 

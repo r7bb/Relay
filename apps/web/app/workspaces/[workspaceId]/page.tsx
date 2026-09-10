@@ -6,6 +6,7 @@ import { useParams } from 'next/navigation';
 import { type FormEvent, useState } from 'react';
 import { NotificationBell } from '../../../components/notification-bell.tsx';
 import { PresenceBar } from '../../../components/presence.tsx';
+import { ThemePicker } from '../../../components/theme-picker.tsx';
 import { ErrorState, RoleBadge } from '../../../components/ui.tsx';
 import {
   api,
@@ -15,6 +16,7 @@ import {
   type WorkspaceSummary,
 } from '../../../lib/api.ts';
 import { useRealtime } from '../../../lib/realtime.ts';
+import { lastTheme, rememberTheme, useApplyTheme } from '../../../lib/theme.ts';
 
 export default function WorkspacePage() {
   const { workspaceId } = useParams<{ workspaceId: string }>();
@@ -71,6 +73,12 @@ export default function WorkspacePage() {
     },
   });
 
+  // Fall back to the last theme seen so navigating between workspaces does
+  // not flash the default while this one loads.
+  const theme = workspace.data?.workspace.theme ?? lastTheme();
+  useApplyTheme(theme);
+  rememberTheme(workspace.data?.workspace.theme);
+
   if (workspace.isError) {
     return <ErrorState message={(workspace.error as Error).message} />;
   }
@@ -84,20 +92,22 @@ export default function WorkspacePage() {
   // Mirrors the server matrix: guests may look, not build. The API enforces
   // this regardless; hiding the control just avoids offering a dead button.
   const canCreateProject = role !== undefined && role !== 'GUEST';
+  // Theme is a workspace setting, so it needs the same permission as renaming.
+  const canManageWorkspace = role === 'OWNER' || role === 'ADMIN';
 
   return (
     <main className="mx-auto max-w-5xl px-6 py-12">
-      <nav className="text-sm text-slate-500">
-        <Link href="/workspaces" className="hover:text-slate-300">
+      <nav className="text-sm text-faint">
+        <Link href="/workspaces" className="hover:text-muted">
           Workspaces
         </Link>
         <span className="mx-2">/</span>
-        <span className="text-slate-300">{workspace.data?.workspace.name ?? '…'}</span>
+        <span className="text-muted">{workspace.data?.workspace.name ?? '…'}</span>
       </nav>
 
       <header className="mt-4 flex items-center justify-between gap-3">
         <div className="flex items-center gap-3">
-          <h1 className="text-xl font-semibold tracking-tight text-white">
+          <h1 className="text-xl font-semibold tracking-tight text-content">
             {workspace.data?.workspace.name}
           </h1>
           {role && <RoleBadge role={role} />}
@@ -115,12 +125,12 @@ export default function WorkspacePage() {
             value={name}
             onChange={(e) => setName(e.target.value)}
             placeholder="New project name"
-            className="flex-1 rounded-md border border-surface-border bg-surface-raised px-3 py-2 text-sm outline-none focus:border-indigo-500"
+            className="flex-1 rounded-md border border-line bg-raised px-3 py-2 text-sm outline-none focus:border-accent"
           />
           <button
             type="submit"
             disabled={createProject.isPending || !name.trim()}
-            className="rounded-md bg-indigo-500 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-400 disabled:opacity-50"
+            className="rounded-md bg-accent px-4 py-2 text-sm font-medium text-accent-contrast hover:bg-accent-hover disabled:opacity-50"
           >
             Create project
           </button>
@@ -132,13 +142,13 @@ export default function WorkspacePage() {
           <Link
             key={project.id}
             href={`/workspaces/${workspaceId}/projects/${project.id}`}
-            className="rounded-lg border border-surface-border bg-surface-raised p-4 transition hover:border-slate-600"
+            className="rounded-lg border border-line bg-raised p-4 transition hover:border-faint"
           >
             <div className="flex items-center justify-between">
-              <span className="font-medium text-slate-100">{project.name}</span>
-              <span className="font-mono text-xs text-slate-500">{project.key}</span>
+              <span className="font-medium text-content">{project.name}</span>
+              <span className="font-mono text-xs text-faint">{project.key}</span>
             </div>
-            <p className="mt-2 text-xs text-slate-500">
+            <p className="mt-2 text-xs text-faint">
               {project.openIssues} open {project.openIssues === 1 ? 'issue' : 'issues'}
             </p>
           </Link>
@@ -146,7 +156,7 @@ export default function WorkspacePage() {
       </section>
 
       <section className="mt-12">
-        <h2 className="text-sm font-medium uppercase tracking-wide text-slate-500">Documents</h2>
+        <h2 className="text-sm font-medium uppercase tracking-wide text-faint">Documents</h2>
 
         {canCreateProject && (
           <form
@@ -161,12 +171,12 @@ export default function WorkspacePage() {
               value={documentTitle}
               onChange={(event) => setDocumentTitle(event.target.value)}
               placeholder="New document title"
-              className="flex-1 rounded-md border border-surface-border bg-surface-raised px-3 py-2 text-sm outline-none focus:border-indigo-500"
+              className="flex-1 rounded-md border border-line bg-raised px-3 py-2 text-sm outline-none focus:border-accent"
             />
             <button
               type="submit"
               disabled={createDocument.isPending || !documentTitle.trim()}
-              className="rounded-md bg-indigo-500 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-400 disabled:opacity-50"
+              className="rounded-md bg-accent px-4 py-2 text-sm font-medium text-accent-contrast hover:bg-accent-hover disabled:opacity-50"
             >
               Create document
             </button>
@@ -178,7 +188,7 @@ export default function WorkspacePage() {
             <li key={document.id}>
               <Link
                 href={`/workspaces/${workspaceId}/documents/${document.id}`}
-                className="block rounded-lg border border-surface-border bg-surface-raised px-4 py-3 text-sm text-slate-200 transition hover:border-slate-600"
+                className="block rounded-lg border border-line bg-raised px-4 py-3 text-sm text-content transition hover:border-faint"
               >
                 {document.title}
               </Link>
@@ -187,20 +197,22 @@ export default function WorkspacePage() {
         </ul>
 
         {documentList.isSuccess && documentList.data.documents.length === 0 && (
-          <p className="mt-3 text-sm text-slate-500">
+          <p className="mt-3 text-sm text-faint">
             No documents yet. Create one to try collaborative editing.
           </p>
         )}
       </section>
 
+      <ThemePicker workspaceId={workspaceId} current={theme} canEdit={canManageWorkspace} />
+
       <section className="mt-12">
-        <h2 className="text-sm font-medium uppercase tracking-wide text-slate-500">Members</h2>
-        <ul className="mt-3 divide-y divide-surface-border rounded-lg border border-surface-border bg-surface-raised">
+        <h2 className="text-sm font-medium uppercase tracking-wide text-faint">Members</h2>
+        <ul className="mt-3 divide-y divide-line rounded-lg border border-line bg-raised">
           {members.data?.members.map((member) => (
             <li key={member.userId} className="flex items-center justify-between px-4 py-2.5">
               <span>
-                <span className="text-sm text-slate-200">{member.name}</span>
-                <span className="ml-2 text-xs text-slate-500">{member.email}</span>
+                <span className="text-sm text-content">{member.name}</span>
+                <span className="ml-2 text-xs text-faint">{member.email}</span>
               </span>
               <RoleBadge role={member.role} />
             </li>

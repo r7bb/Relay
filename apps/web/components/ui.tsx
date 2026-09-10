@@ -8,7 +8,7 @@ import Link from 'next/link';
 
 export function RoleBadge({ role }: { role: string }) {
   return (
-    <span className="rounded-full border border-surface-border px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-slate-400">
+    <span className="rounded-full border border-line px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-muted">
       {role}
     </span>
   );
@@ -17,10 +17,10 @@ export function RoleBadge({ role }: { role: string }) {
 export function ErrorState({ message }: { message: string }) {
   return (
     <main className="mx-auto max-w-md px-6 py-24 text-center">
-      <p className="text-sm text-slate-400">{message}</p>
+      <p className="text-sm text-muted">{message}</p>
       <Link
         href="/workspaces"
-        className="mt-4 inline-block text-sm text-indigo-400 hover:underline"
+        className="mt-4 inline-block text-sm text-accent-soft hover:underline"
       >
         Back to workspaces
       </Link>

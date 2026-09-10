@@ -5,6 +5,44 @@ import Link from 'next/link';
 import { useEffect, useRef, useState } from 'react';
 import { api, type NotificationItem } from '../lib/api.ts';
 
+/**
+ * Where a notification takes you.
+ *
+ * A nudge about creating your first workspace has no workspace to link to, so
+ * it falls back to the index -- which is exactly where the action is.
+ */
+function hrefFor(item: NotificationItem): string {
+  // A nudge opens its guide rather than dumping the reader somewhere and
+  // leaving them to work out what was being suggested.
+  if (item.kind === 'nudge' && item.payload.nudge) {
+    const workspace = item.workspaceId ? `?w=${item.workspaceId}` : '';
+    return `/guide/${item.payload.nudge}${workspace}`;
+  }
+
+  if (item.payload.issueId && item.workspaceId) {
+    return `/workspaces/${item.workspaceId}/issues/${item.payload.issueId}`;
+  }
+
+  return item.workspaceId ? `/workspaces/${item.workspaceId}` : '/workspaces';
+}
+
+function headlineFor(item: NotificationItem) {
+  if (item.kind === 'nudge') return item.payload.title ?? 'Suggestion';
+
+  return (
+    <>
+      <span className="font-medium">{item.actorName ?? 'Someone'}</span> mentioned you
+      {item.payload.issueKey && (
+        <span className="ml-1 font-mono text-xs text-faint">{item.payload.issueKey}</span>
+      )}
+    </>
+  );
+}
+
+function bodyFor(item: NotificationItem): string | undefined {
+  return item.kind === 'nudge' ? item.payload.body : item.payload.excerpt;
+}
+
 /** Poll interval for the inbox. Notifications arrive via a worker, so there is
  * no realtime event to key off -- the job may land seconds after the comment. */
 const POLL_MS = 20_000;
@@ -70,20 +108,20 @@ export function NotificationBell() {
         onClick={() => setOpen((value) => !value)}
         aria-label={unread > 0 ? `Notifications, ${unread} unread` : 'Notifications'}
         aria-expanded={open}
-        className="relative rounded-md px-2 py-1 text-sm text-slate-400 hover:text-slate-200"
+        className="relative rounded-md px-2 py-1 text-sm text-muted hover:text-content"
       >
         Inbox
         {unread > 0 && (
-          <span className="ml-1.5 rounded-full bg-indigo-500 px-1.5 py-0.5 text-[10px] font-semibold text-white">
+          <span className="ml-1.5 rounded-full bg-accent px-1.5 py-0.5 text-[10px] font-semibold text-accent-contrast">
             {unread}
           </span>
         )}
       </button>
 
       {open && (
-        <div className="absolute right-0 z-10 mt-2 w-96 overflow-hidden rounded-lg border border-surface-border bg-surface-raised shadow-xl">
-          <div className="flex items-center justify-between border-b border-surface-border px-4 py-2">
-            <span className="text-xs font-medium uppercase tracking-wide text-slate-500">
+        <div className="absolute right-0 z-10 mt-2 w-96 overflow-hidden rounded-lg border border-line bg-raised shadow-xl">
+          <div className="flex items-center justify-between border-b border-line px-4 py-2">
+            <span className="text-xs font-medium uppercase tracking-wide text-faint">
               Notifications
             </span>
 
@@ -91,7 +129,7 @@ export function NotificationBell() {
               <button
                 type="button"
                 onClick={() => markAllRead.mutate()}
-                className="text-xs text-slate-400 hover:text-slate-200"
+                className="text-xs text-muted hover:text-content"
               >
                 Mark all read
               </button>
@@ -99,9 +137,9 @@ export function NotificationBell() {
           </div>
 
           {items.length === 0 ? (
-            <p className="px-4 py-6 text-center text-sm text-slate-500">Nothing here yet.</p>
+            <p className="px-4 py-6 text-center text-sm text-faint">Nothing here yet.</p>
           ) : (
-            <ul className="max-h-96 divide-y divide-surface-border overflow-y-auto">
+            <ul className="max-h-96 divide-y divide-line overflow-y-auto">
               {items.map((item) => (
                 <li key={item.id} className={item.readAt ? 'opacity-60' : undefined}>
                   <Link
@@ -117,11 +155,11 @@ export function NotificationBell() {
                     className="block px-4 py-3 hover:bg-surface"
                   >
                     <div className="flex items-baseline justify-between gap-2">
-                      <span className="text-sm text-slate-200">
+                      <span className="text-sm text-content">
                         <span className="font-medium">{item.actorName ?? 'Someone'}</span> mentioned
                         you
                         {item.payload.issueKey && (
-                          <span className="ml-1 font-mono text-xs text-slate-500">
+                          <span className="ml-1 font-mono text-xs text-faint">
                             {item.payload.issueKey}
                           </span>
                         )}
@@ -130,15 +168,13 @@ export function NotificationBell() {
                       {!item.readAt && (
                         <span
                           aria-hidden
-                          className="h-1.5 w-1.5 shrink-0 rounded-full bg-indigo-400"
+                          className="h-1.5 w-1.5 shrink-0 rounded-full bg-accent-hover"
                         />
                       )}
                     </div>
 
                     {item.payload.excerpt && (
-                      <p className="mt-1 line-clamp-2 text-xs text-slate-500">
-                        {item.payload.excerpt}
-                      </p>
+                      <p className="mt-1 line-clamp-2 text-xs text-faint">{item.payload.excerpt}</p>
                     )}
                   </Link>
                 </li>

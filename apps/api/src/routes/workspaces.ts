@@ -50,6 +50,7 @@ export async function workspaceRoutes(app: FastifyInstance, opts: { db: Database
         id: workspaces.id,
         name: workspaces.name,
         slug: workspaces.slug,
+        theme: workspaces.theme,
         role: workspaceMembers.role,
         createdAt: workspaces.createdAt,
       })
@@ -127,7 +128,9 @@ export async function workspaceRoutes(app: FastifyInstance, opts: { db: Database
 
       const [updated] = await db
         .update(workspaces)
-        .set({ name: input.name, updatedAt: new Date() })
+        // Spread rather than naming fields: the payload is partial, and
+        // Drizzle skips undefined keys, so absent fields stay untouched.
+        .set({ ...input, updatedAt: new Date() })
         .where(eq(workspaces.id, workspaceId))
         .returning();
 
@@ -139,7 +142,7 @@ export async function workspaceRoutes(app: FastifyInstance, opts: { db: Database
         entityType: 'workspace',
         entityId: workspaceId,
         eventType: 'workspace.updated',
-        payload: JSON.stringify({ name: input.name }),
+        payload: JSON.stringify(input),
       });
 
       return { workspace: updated };

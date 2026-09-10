@@ -87,6 +87,30 @@ notification, delivered by the background worker rather than inline.
 
 ![Notification inbox](docs/screenshots/11-notification-inbox.png)
 
+### Themes
+
+Each workspace picks its own theme, and everyone in it sees the same one. Six
+palettes, including a light one.
+
+![Daylight theme](docs/screenshots/13-theme-daylight.png)
+
+Colours resolve through CSS variables, so switching is a variable swap rather
+than a class rewrite. Only surfaces and the accent are themed — status colours
+stay fixed, because a red that shifts per workspace is a red nobody learns to
+read.
+
+### Nudges and guides
+
+A background scan looks for people who could use a prompt: no workspace yet, a
+project with no issues, a workspace with no documents. Clicking one opens a
+short guide that ends in a button which does the thing.
+
+![Guide page](docs/screenshots/15-guide-page.png)
+
+The interesting constraint is not sending them: one nudge per person per scan,
+and a weekly bucket in the dedupe key so the same prompt cannot arrive twice in
+a week but *can* come back later if nothing changed.
+
 ### Collaborative documents
 
 Create a document from the workspace page and open it in two windows. Both
@@ -432,6 +456,19 @@ database was missing it — so the mention handler failed on `ON CONFLICT` in
 dev while every test stayed green. `bun run db:migrate` is now the documented
 path, so all three environments execute the same statements.
 
+### Nudges are rate-limited by their dedupe key, not by a timer
+
+The only real failure mode for engagement prompts is becoming noise. Two rules
+handle it. A scan sends **one** nudge per person even when they trip several
+rules, ordered by how early they are in the funnel — suggesting they invite a
+teammate to an empty workspace is worse than useless. And the dedupe key
+carries an ISO week, so `(user, dedupe_key)` being unique means the same prompt
+cannot arrive twice in a week but *can* return later if nothing improved.
+
+That also makes the scan job safely re-runnable, which matters because the
+queue is at-least-once. A cooldown checked with a read-then-write would let two
+concurrent scans both decide the nudge was missing.
+
 ### Sessions are opaque, not JWTs
 
 Session lookup costs one indexed read per request. In exchange, signing out
@@ -453,7 +490,7 @@ body.
 
 ## Testing
 
-**154 tests** against a real Postgres rather than mocks. The behaviour under test
+**182 tests** against a real Postgres rather than mocks. The behaviour under test
 — unique constraints, cascades, row locks, transactional `NOTIFY` — is behaviour
 the database provides, so a fake would only prove the fake works.
 
@@ -473,6 +510,8 @@ bun test
 | `text.test.ts`          | Textarea-to-CRDT edit extraction, 500 randomised round-trips     |
 | `queue.test.ts`         | `SKIP LOCKED` claiming, backoff, dead-letter, mention delivery   |
 | `mentions.test.ts`      | Mention parsing, ambiguity, emails-in-prose false positives      |
+| `themes.test.ts`        | Token completeness, WCAG contrast, palette-bypass guard          |
+| `nudges.test.ts`        | Rule ordering, weekly dedupe, redelivery, spam resistance        |
 | `idempotency.test.ts`   | Exactly-once mutations, key misuse, client-generated ids         |
 
 The ones worth reading are adversarial: pasting another tenant's project id into
@@ -495,8 +534,9 @@ ceiling, a socket subscribing to a workspace it doesn't belong to, and the
 - CRDT documents (Yjs) with live cursors, stored as an append-only update log
 - Background job queue on Postgres `SKIP LOCKED`, with `@mention` notifications
 - Issue detail pages, comment threads, and a notification inbox
+- Per-workspace themes, and engagement nudges that open a how-to guide
 - Next.js client with optimistic updates
-- 154 tests, CI, linting, typechecking
+- 182 tests, CI, linting, typechecking
 
 **Next**
 

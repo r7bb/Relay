@@ -2,12 +2,28 @@
 @tailwind components;
 @tailwind utilities;
 
+/*
+ * Midnight, inlined as the default so the first paint is themed before any
+ * JavaScript runs. `applyTheme` overwrites these on the root element once the
+ * workspace's own theme is known.
+ */
 :root {
   color-scheme: dark;
+
+  --surface: 14 16 20;
+  --raised: 22 25 31;
+  --border: 37 42 51;
+  --content: 226 232 240;
+  --muted: 148 163 184;
+  --faint: 100 116 139;
+  --accent: 99 102 241;
+  --accent-hover: 129 140 248;
+  --accent-soft: 165 180 252;
+  --accent-contrast: 255 255 255;
 }
 
 body {
-  @apply bg-surface text-slate-200 antialiased;
+  @apply bg-surface text-content antialiased;
   font-family:
     ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
 }

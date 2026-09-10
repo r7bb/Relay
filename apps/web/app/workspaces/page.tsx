@@ -65,10 +65,8 @@ export default function WorkspacesPage() {
     <main className="mx-auto max-w-3xl px-6 py-12">
       <header className="flex items-baseline justify-between">
         <div>
-          <h1 className="text-xl font-semibold tracking-tight text-white">Workspaces</h1>
-          {me.data && (
-            <p className="mt-1 text-sm text-slate-400">Signed in as {me.data.user.name}</p>
-          )}
+          <h1 className="text-xl font-semibold tracking-tight text-content">Workspaces</h1>
+          {me.data && <p className="mt-1 text-sm text-muted">Signed in as {me.data.user.name}</p>}
         </div>
 
         <div className="flex items-center gap-4">
@@ -77,7 +75,7 @@ export default function WorkspacesPage() {
           <button
             type="button"
             onClick={() => signOut.mutate()}
-            className="text-sm text-slate-400 hover:text-slate-200"
+            className="text-sm text-muted hover:text-content"
           >
             Sign out
           </button>
@@ -89,12 +87,12 @@ export default function WorkspacesPage() {
           value={name}
           onChange={(e) => setName(e.target.value)}
           placeholder="New workspace name"
-          className="flex-1 rounded-md border border-surface-border bg-surface-raised px-3 py-2 text-sm outline-none focus:border-indigo-500"
+          className="flex-1 rounded-md border border-line bg-raised px-3 py-2 text-sm outline-none focus:border-accent"
         />
         <button
           type="submit"
           disabled={createWorkspace.isPending || !name.trim()}
-          className="rounded-md bg-indigo-500 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-400 disabled:opacity-50"
+          className="rounded-md bg-accent px-4 py-2 text-sm font-medium text-accent-contrast hover:bg-accent-hover disabled:opacity-50"
         >
           Create
         </button>
@@ -111,11 +109,11 @@ export default function WorkspacesPage() {
           <li key={workspace.id}>
             <Link
               href={`/workspaces/${workspace.id}`}
-              className="flex items-center justify-between rounded-lg border border-surface-border bg-surface-raised px-4 py-3 transition hover:border-slate-600"
+              className="flex items-center justify-between rounded-lg border border-line bg-raised px-4 py-3 transition hover:border-faint"
             >
               <span>
-                <span className="font-medium text-slate-100">{workspace.name}</span>
-                <span className="ml-2 text-xs text-slate-500">/{workspace.slug}</span>
+                <span className="font-medium text-content">{workspace.name}</span>
+                <span className="ml-2 text-xs text-faint">/{workspace.slug}</span>
               </span>
               <RoleBadge role={workspace.role} />
             </Link>
@@ -124,7 +122,7 @@ export default function WorkspacesPage() {
       </ul>
 
       {workspaces.isSuccess && workspaces.data.workspaces.length === 0 && (
-        <p className="mt-8 text-sm text-slate-500">
+        <p className="mt-8 text-sm text-faint">
           No workspaces yet. Create one above to get started.
         </p>
       )}

@@ -2,7 +2,7 @@
 
 Where Relay is, what is left, and what is deliberately not being built.
 
-Status as of the current commit: **154 tests, lint and typecheck clean, CI green.**
+Status as of the current commit: **182 tests, lint and typecheck clean, CI green.**
 
 ---
 
@@ -41,6 +41,14 @@ Status as of the current commit: **154 tests, lint and typecheck clean, CI green
   reconciliation that preserves unflushed local work
 - Exactly-once mutations: client-generated ids plus a server idempotency ledger
 - Poison-message handling — permanent refusals are dropped, 408/429 are not
+
+### Presentation and onboarding
+
+- Six workspace themes on CSS variables, including a light palette, with WCAG
+  contrast asserted per theme and a test that fails if anything bypasses the
+  tokens
+- Engagement nudges from a periodic scan, rate-limited by a weekly dedupe key
+- Tips-style guide pages, one per nudge, ending in an action that does the thing
 
 ### 5 · Collaborative documents
 

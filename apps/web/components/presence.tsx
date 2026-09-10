@@ -3,6 +3,11 @@
 import type { PresenceUser } from '@relay/shared';
 import type { ConnectionState } from '../lib/realtime.ts';
 
+/**
+ * Fixed palette, deliberately not themed. These identify people, so they must
+ * stay distinguishable from each other and stable across workspaces -- an
+ * avatar that changes colour with the theme is a worse avatar.
+ */
 const AVATAR_COLORS = [
   'bg-indigo-500',
   'bg-emerald-500',
@@ -61,7 +66,7 @@ export function PresenceBar({
         ))}
       </div>
 
-      <span className="flex items-center gap-1.5 text-xs text-slate-500">
+      <span className="flex items-center gap-1.5 text-xs text-faint">
         <span
           aria-hidden
           className={[
@@ -70,7 +75,7 @@ export function PresenceBar({
               ? 'bg-emerald-400'
               : state === 'connecting'
                 ? 'bg-amber-400'
-                : 'bg-slate-600',
+                : 'bg-faint',
           ].join(' ')}
         />
         {label}

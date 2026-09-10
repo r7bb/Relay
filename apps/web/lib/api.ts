@@ -1,4 +1,4 @@
-import type { IssuePriority, IssueStatus, Role } from '@relay/shared';
+import type { IssuePriority, IssueStatus, Role, ThemeId } from '@relay/shared';
 
 const BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000';
 
@@ -54,6 +54,7 @@ export type WorkspaceSummary = {
   name: string;
   slug: string;
   role: Role;
+  theme: ThemeId;
 };
 
 export type ProjectSummary = {
@@ -115,15 +116,20 @@ export type Comment = {
 export type NotificationItem = {
   id: string;
   kind: string;
-  workspaceId: string;
   entityType: string;
   entityId: string;
   payload: {
+    /** Mentions. */
     issueId?: string;
     issueKey?: string | null;
     issueTitle?: string | null;
     excerpt?: string;
+    /** Nudges. */
+    title?: string;
+    body?: string;
+    nudge?: string;
   };
+  workspaceId: string | null;
   readAt: string | null;
   createdAt: string;
   actorId: string | null;
