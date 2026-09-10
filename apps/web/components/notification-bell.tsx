@@ -143,11 +143,7 @@ export function NotificationBell() {
               {items.map((item) => (
                 <li key={item.id} className={item.readAt ? 'opacity-60' : undefined}>
                   <Link
-                    href={
-                      item.payload.issueId
-                        ? `/workspaces/${item.workspaceId}/issues/${item.payload.issueId}`
-                        : `/workspaces/${item.workspaceId}`
-                    }
+                    href={hrefFor(item)}
                     onClick={() => {
                       if (!item.readAt) markRead.mutate(item.id);
                       setOpen(false);
@@ -155,26 +151,18 @@ export function NotificationBell() {
                     className="block px-4 py-3 hover:bg-surface"
                   >
                     <div className="flex items-baseline justify-between gap-2">
-                      <span className="text-sm text-content">
-                        <span className="font-medium">{item.actorName ?? 'Someone'}</span> mentioned
-                        you
-                        {item.payload.issueKey && (
-                          <span className="ml-1 font-mono text-xs text-faint">
-                            {item.payload.issueKey}
-                          </span>
-                        )}
-                      </span>
+                      <span className="text-sm text-content">{headlineFor(item)}</span>
 
                       {!item.readAt && (
                         <span
                           aria-hidden
-                          className="h-1.5 w-1.5 shrink-0 rounded-full bg-accent-hover"
+                          className="h-1.5 w-1.5 shrink-0 rounded-full bg-accent-soft"
                         />
                       )}
                     </div>
 
-                    {item.payload.excerpt && (
-                      <p className="mt-1 line-clamp-2 text-xs text-faint">{item.payload.excerpt}</p>
+                    {bodyFor(item) && (
+                      <p className="mt-1 line-clamp-2 text-xs text-faint">{bodyFor(item)}</p>
                     )}
                   </Link>
                 </li>
