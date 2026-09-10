@@ -116,13 +116,27 @@ export async function compactDocument(db: Executor, documentId: string): Promise
     .where(and(eq(documentUpdates.documentId, documentId), lte(documentUpdates.seq, highestSeq)));
 }
 
-/** Append an update, compacting when the log has grown enough. */
+/**
+ * Append an update, compacting when the log has grown enough.
+ *
+ * `plainText` is the rendered document, supplied by whoever already has it in
+ * memory. Search cannot read the CRDT encoding, and re-deriving the text here
+ * would mean rebuilding the whole document on every keystroke batch.
+ */
 export async function recordUpdate(
   db: Executor,
   documentId: string,
   update: Uint8Array,
+  plainText?: string,
 ): Promise<void> {
   await appendUpdate(db, documentId, update);
+
+  if (plainText !== undefined) {
+    await db
+      .update(documents)
+      .set({ searchText: plainText, updatedAt: new Date() })
+      .where(eq(documents.id, documentId));
+  }
 
   if ((await countUpdates(db, documentId)) >= COMPACT_THRESHOLD) {
     await compactDocument(db, documentId);

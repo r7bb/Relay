@@ -2,7 +2,7 @@
 
 Where Relay is, what is left, and what is deliberately not being built.
 
-Status as of the current commit: **182 tests, lint and typecheck clean, CI green.**
+Status as of the current commit: **209 tests, lint and typecheck clean, CI green.**
 
 ---
 
@@ -70,7 +70,8 @@ last-write-wins per field; concurrent edits to the *same paragraph* do not.
 
 - [x] Service worker so the app shell loads with no network. Network-first for
       navigations, cache-first for fingerprinted assets, never for API traffic
-- [ ] Rate limiting on auth and mutation endpoints
+- [x] Rate limiting on credential and search endpoints, injectable so the
+      limiter itself is tested rather than disabled
 - [ ] Docker verified end to end (compose file exists but has never run here —
       no container runtime on this machine)
 
@@ -85,8 +86,8 @@ last-write-wins per field; concurrent edits to the *same paragraph* do not.
 - [x] Notification inbox UI with unread counts and mark-read
 - [ ] Email delivery (needs an SMTP target)
 - [ ] File attachments via presigned URLs (needs an S3-compatible target)
-- [ ] Search — Postgres full-text first, with a documented comparison against
-      a dedicated engine rather than adopting one reflexively
+- [x] Search — Postgres full-text over issues, comments and documents, on
+      stored generated columns so the index cannot drift from the rows
 
 ---
 
@@ -110,10 +111,11 @@ Honest list of things that are built but thin.
   still fetch their data and will show the offline fallback if visited cold.
 - **The document editor is a plain textarea.** No formatting, and remote
   cursors are listed by name rather than drawn inline.
-- **Members cannot be managed from the UI.** Invite, role change and removal are
-  API-only — the last backend with no front end.
-- **Issue descriptions are not editable.** The field exists and the API accepts
-  it; the detail page shows status, priority and assignee only.
+- **Issue descriptions are not editable.** The field exists, the API accepts it
+  and search indexes it; the detail page shows status, priority and assignee
+  only.
+- **Search has no dedicated results page.** It is a dropdown capped at 20 hits
+  with no pagination or filtering by kind.
 - **No password reset or email verification** — both need the mailer from
   milestone 6.
 - **Issue list pagination is offset-based.** Fine at this size, but it will skip

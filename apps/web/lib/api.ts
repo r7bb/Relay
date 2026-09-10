@@ -135,3 +135,14 @@ export type NotificationItem = {
   actorId: string | null;
   actorName: string | null;
 };
+
+export type SearchHit = {
+  kind: 'issue' | 'document' | 'comment';
+  id: string;
+  title: string;
+  /** Excerpt with matched terms wrapped in `<mark>`; rendered as text, not HTML. */
+  snippet: string;
+  rank: number;
+  issueId: string | null;
+  projectId: string | null;
+};

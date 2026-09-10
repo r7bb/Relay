@@ -10,13 +10,18 @@ import { type Database, users } from '@relay/database';
 import { loginSchema, registerSchema } from '@relay/shared';
 import { eq } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
+import type { RateLimits } from '../app.ts';
 import type { Env } from '../env.ts';
 import { ApiError } from '../errors.ts';
 import { currentUser, requireAuth } from '../plugins/authz.ts';
+import { rateLimit } from '../plugins/rate-limit.ts';
 import { parse } from '../validate.ts';
 
-export async function authRoutes(app: FastifyInstance, opts: { db: Database; env: Env }) {
-  const { db, env } = opts;
+export async function authRoutes(
+  app: FastifyInstance,
+  opts: { db: Database; env: Env; limits: RateLimits },
+) {
+  const { db, env, limits } = opts;
 
   /**
    * Verified when no user matches, so a login attempt costs the same whether or
@@ -33,7 +38,18 @@ export async function authRoutes(app: FastifyInstance, opts: { db: Database; env
     path: '/',
   };
 
-  app.post('/auth/register', async (request, reply) => {
+  /*
+   * Credential endpoints are throttled per address. Argon2 makes each attempt
+   * expensive by design, which protects the password but also makes this a
+   * cheap way to burn server CPU -- the limit protects the server.
+   */
+  const credentialLimit = rateLimit({
+    name: 'auth',
+    limit: limits.authPerMinute,
+    windowMs: 60_000,
+  });
+
+  app.post('/auth/register', { preHandler: credentialLimit }, async (request, reply) => {
     const input = parse(registerSchema, request.body);
     const passwordHash = await hashPassword(input.password);
 
@@ -54,7 +70,7 @@ export async function authRoutes(app: FastifyInstance, opts: { db: Database; env
     return reply.status(201).send({ user });
   });
 
-  app.post('/auth/login', async (request, reply) => {
+  app.post('/auth/login', { preHandler: credentialLimit }, async (request, reply) => {
     const input = parse(loginSchema, request.body);
 
     const [user] = await db

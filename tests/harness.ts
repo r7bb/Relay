@@ -66,7 +66,13 @@ export async function getHarness() {
     WEB_ORIGIN: 'http://localhost:3000',
   } as NodeJS.ProcessEnv);
 
-  const app = buildApp({ db, env });
+  // Generous budgets: the other suites create hundreds of actors from one
+  // address, and throttling them would test the limiter, not them.
+  const app = buildApp({
+    db,
+    env,
+    rateLimits: { authPerMinute: 100_000, searchPerMinute: 100_000 },
+  });
   await app.ready();
 
   handle = { app, db, close };

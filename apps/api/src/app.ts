@@ -12,16 +12,36 @@ import { issueRoutes } from './routes/issues.ts';
 import { memberRoutes } from './routes/members.ts';
 import { notificationRoutes } from './routes/notifications.ts';
 import { projectRoutes } from './routes/projects.ts';
+import { searchRoutes } from './routes/search.ts';
 import { workspaceRoutes } from './routes/workspaces.ts';
+
+/**
+ * Per-minute request budgets, injectable so tests can exercise the limiter
+ * with a small number instead of disabling it. Turning rate limiting off in
+ * tests would mean the only code path anyone runs is the untested one.
+ */
+export type RateLimits = {
+  /** Register and login, per address. */
+  authPerMinute: number;
+  /** Full-text search, per account. */
+  searchPerMinute: number;
+};
+
+export const DEFAULT_RATE_LIMITS: RateLimits = {
+  authPerMinute: 10,
+  searchPerMinute: 60,
+};
 
 export type AppDeps = {
   db: Database;
   env: Env;
   /** Quiet by default in tests; `main.ts` turns logging on. */
   logger?: boolean;
+  rateLimits?: Partial<RateLimits>;
 };
 
-export function buildApp({ db, env, logger = false }: AppDeps): FastifyInstance {
+export function buildApp({ db, env, logger = false, rateLimits }: AppDeps): FastifyInstance {
+  const limits: RateLimits = { ...DEFAULT_RATE_LIMITS, ...rateLimits };
   const app = Fastify({ logger, trustProxy: true });
 
   app.register(cookie);
@@ -57,7 +77,7 @@ export function buildApp({ db, env, logger = false }: AppDeps): FastifyInstance 
 
   app.get('/health', async () => ({ status: 'ok' }));
 
-  app.register(authRoutes, { db, env });
+  app.register(authRoutes, { db, env, limits });
   app.register(workspaceRoutes, { db });
   app.register(memberRoutes, { db });
   app.register(projectRoutes, { db });
@@ -65,6 +85,7 @@ export function buildApp({ db, env, logger = false }: AppDeps): FastifyInstance 
   app.register(commentRoutes, { db });
   app.register(documentRoutes, { db });
   app.register(notificationRoutes, { db });
+  app.register(searchRoutes, { db, limits });
 
   return app;
 }

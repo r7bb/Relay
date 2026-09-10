@@ -114,7 +114,14 @@ export class DocumentRoom {
     this.pending = [];
 
     try {
-      await recordUpdate(this.db, this.documentId, Y.mergeUpdates(batch));
+      // The room already holds the rendered text; passing it keeps the
+      // search index current without rebuilding the document.
+      await recordUpdate(
+        this.db,
+        this.documentId,
+        Y.mergeUpdates(batch),
+        this.doc.getText('content').toString(),
+      );
     } catch (error) {
       // The document was deleted while these edits were still in the debounce
       // window. There is nothing to write them to, and requeueing would retry

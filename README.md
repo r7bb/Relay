@@ -87,6 +87,21 @@ notification, delivered by the background worker rather than inline.
 
 ![Notification inbox](docs/screenshots/11-notification-inbox.png)
 
+### Search
+
+Full-text search across issues, comments and documents, scoped to one
+workspace and to what you are allowed to read.
+
+![Search](docs/screenshots/18-search.png)
+
+### Managing people
+
+Invite by email, change roles, remove members. The controls mirror the server's
+rules rather than reimplementing them — an admin sees no option to promote
+someone to owner, and the last owner has no remove button.
+
+![Members](docs/screenshots/19-members.png)
+
 ### Themes
 
 Each workspace picks its own theme, and everyone in it sees the same one. Six
@@ -469,6 +484,36 @@ That also makes the scan job safely re-runnable, which matters because the
 queue is at-least-once. A cooldown checked with a read-then-write would let two
 concurrent scans both decide the nudge was missing.
 
+### Search is Postgres, and the index cannot drift
+
+`search_vector` is a **stored generated column**, so Postgres recomputes it
+inside the same write that changes the row. There is no indexing pipeline to
+fall behind, fail quietly, or reconcile after a restore, and a freshly created
+issue is findable in the same transaction that made it. Titles carry weight A
+and bodies weight B, so a term in the title outranks the same term buried in a
+description.
+
+Queries go through `websearch_to_tsquery`, which accepts quoted phrases and
+leading `-` for exclusion and — unlike `to_tsquery` — never throws on
+punctuation a user happens to type into a search box.
+
+What this does not give you: fuzzy matching, typo tolerance, or ranking as
+tunable as a purpose-built engine. Those are the reasons to adopt one. The word
+"search" is not.
+
+### Rate limiting is in memory, and honest about it
+
+A fixed window and a counter, per account when signed in and per address when
+not — which is where credential stuffing lives. Argon2 makes each login
+deliberately expensive, which protects the password and simultaneously makes
+login a cheap way to burn server CPU; the limit protects the server.
+
+Behind several instances each enforces its own share, so the effective limit is
+`limit × instances`. That is looser than intended but still bounded, and the
+failure mode is permissive rather than locking people out. A shared store is
+the fix when that matters. The limits are injectable, so the tests exercise the
+limiter with a budget of three instead of switching it off.
+
 ### Sessions are opaque, not JWTs
 
 Session lookup costs one indexed read per request. In exchange, signing out
@@ -490,7 +535,7 @@ body.
 
 ## Testing
 
-**182 tests** against a real Postgres rather than mocks. The behaviour under test
+**209 tests** against a real Postgres rather than mocks. The behaviour under test
 — unique constraints, cascades, row locks, transactional `NOTIFY` — is behaviour
 the database provides, so a fake would only prove the fake works.
 
@@ -512,6 +557,8 @@ bun test
 | `mentions.test.ts`      | Mention parsing, ambiguity, emails-in-prose false positives      |
 | `themes.test.ts`        | Token completeness, WCAG contrast, palette-bypass guard          |
 | `nudges.test.ts`        | Rule ordering, weekly dedupe, redelivery, spam resistance        |
+| `search.test.ts`        | Stemming, ranking, index freshness, tenant isolation             |
+| `rate-limit.test.ts`    | Budgets, headers, per-caller isolation, retryability             |
 | `idempotency.test.ts`   | Exactly-once mutations, key misuse, client-generated ids         |
 
 The ones worth reading are adversarial: pasting another tenant's project id into
@@ -535,12 +582,14 @@ ceiling, a socket subscribing to a workspace it doesn't belong to, and the
 - Background job queue on Postgres `SKIP LOCKED`, with `@mention` notifications
 - Issue detail pages, comment threads, and a notification inbox
 - Per-workspace themes, and engagement nudges that open a how-to guide
+- Full-text search over issues, comments and documents
+- Member management UI and rate limiting on credential endpoints
 - Next.js client with optimistic updates
-- 182 tests, CI, linting, typechecking
+- 209 tests, CI, linting, typechecking
 
 **Next**
 
-- Member management UI, search, file uploads
+- File uploads and email delivery (both need an external service)
 - Rate limiting on auth and mutation endpoints
 - Load testing and OpenTelemetry
 

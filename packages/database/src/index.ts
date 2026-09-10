@@ -8,6 +8,7 @@ export * from './presence-bus.ts';
 export * from './queries.ts';
 export * from './queue.ts';
 export * from './schema.ts';
+export * from './search.ts';
 export { schema };
 
 export type Database = ReturnType<typeof createDatabase>['db'];

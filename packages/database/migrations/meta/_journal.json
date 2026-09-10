@@ -36,6 +36,13 @@
       "when": 1789064018238,
       "tag": "0004_themes_and_nudges",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1789065211863,
+      "tag": "0005_search",
+      "breakpoints": true
     }
   ]
 }

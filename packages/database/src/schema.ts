@@ -26,6 +26,16 @@ const bytea = customType<{ data: Uint8Array; driverData: Buffer }>({
   fromDriver: (value) => new Uint8Array(value),
 });
 
+/**
+ * Full-text search vector.
+ *
+ * Declared as a stored generated column rather than maintained by a trigger or
+ * by application code: Postgres recomputes it inside the same write, so it can
+ * never drift from the row it describes and there is nothing to backfill after
+ * a bug.
+ */
+const tsvector = customType<{ data: string }>({ dataType: () => 'tsvector' });
+
 const id = () => uuid('id').primaryKey().defaultRandom();
 const createdAt = () => timestamp('created_at', { withTimezone: true }).notNull().defaultNow();
 const updatedAt = () => timestamp('updated_at', { withTimezone: true }).notNull().defaultNow();
@@ -182,12 +192,18 @@ export const issues = pgTable(
       .references(() => users.id, { onDelete: 'restrict' }),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
+    /** Weight A for the title, B for the body: a term in the title is a
+     * stronger match than the same term buried in a description. */
+    searchVector: tsvector('search_vector').generatedAlwaysAs(
+      sql`setweight(to_tsvector('english', coalesce(title, '')), 'A') || setweight(to_tsvector('english', coalesce(description, '')), 'B')`,
+    ),
   },
   (t) => [
     uniqueIndex('issues_project_number_key').on(t.projectId, t.number),
     index('issues_workspace_id_idx').on(t.workspaceId),
     index('issues_project_status_idx').on(t.projectId, t.status),
     index('issues_assignee_idx').on(t.assigneeId),
+    index('issues_search_idx').using('gin', t.searchVector),
   ],
 );
 
@@ -207,8 +223,14 @@ export const comments = pgTable(
     body: text('body').notNull(),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
+    searchVector: tsvector('search_vector').generatedAlwaysAs(
+      sql`to_tsvector('english', coalesce(body, ''))`,
+    ),
   },
-  (t) => [index('comments_issue_id_idx').on(t.issueId, t.createdAt)],
+  (t) => [
+    index('comments_issue_id_idx').on(t.issueId, t.createdAt),
+    index('comments_search_idx').using('gin', t.searchVector),
+  ],
 );
 
 /**
@@ -257,15 +279,26 @@ export const documents = pgTable(
      * `document_updates` recorded after it.
      */
     snapshot: bytea('snapshot'),
+    /**
+     * Plain-text mirror of the document, written by the gateway when it
+     * persists. The content itself is an opaque CRDT encoding that Postgres
+     * cannot read, so search needs a rendered copy -- kept alongside rather
+     * than derived, because only the editor knows how to render it.
+     */
+    searchText: text('search_text'),
     createdBy: uuid('created_by')
       .notNull()
       .references(() => users.id, { onDelete: 'restrict' }),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
+    searchVector: tsvector('search_vector').generatedAlwaysAs(
+      sql`setweight(to_tsvector('english', coalesce(title, '')), 'A') || setweight(to_tsvector('english', coalesce(search_text, '')), 'B')`,
+    ),
   },
   (t) => [
     index('documents_workspace_idx').on(t.workspaceId),
     index('documents_project_idx').on(t.projectId),
+    index('documents_search_idx').using('gin', t.searchVector),
   ],
 );
 

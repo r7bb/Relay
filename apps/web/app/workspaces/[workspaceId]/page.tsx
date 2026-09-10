@@ -4,14 +4,15 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { type FormEvent, useState } from 'react';
+import { MemberList } from '../../../components/member-list.tsx';
 import { NotificationBell } from '../../../components/notification-bell.tsx';
 import { PresenceBar } from '../../../components/presence.tsx';
+import { SearchBox } from '../../../components/search-box.tsx';
 import { ThemePicker } from '../../../components/theme-picker.tsx';
 import { ErrorState, RoleBadge } from '../../../components/ui.tsx';
 import {
   api,
   type DocumentSummary,
-  type Member,
   type ProjectSummary,
   type WorkspaceSummary,
 } from '../../../lib/api.ts';
@@ -54,11 +55,6 @@ export default function WorkspacePage() {
       setDocumentTitle('');
       queryClient.invalidateQueries({ queryKey: ['documents', workspaceId] });
     },
-  });
-
-  const members = useQuery({
-    queryKey: ['members', workspaceId],
-    queryFn: () => api<{ members: Member[] }>(`/workspaces/${workspaceId}/members`),
   });
 
   const createProject = useMutation({
@@ -119,8 +115,12 @@ export default function WorkspacePage() {
         </div>
       </header>
 
+      <div className="mt-8">
+        <SearchBox workspaceId={workspaceId} />
+      </div>
+
       {canCreateProject && (
-        <form onSubmit={onCreate} className="mt-8 flex gap-2">
+        <form onSubmit={onCreate} className="mt-4 flex gap-2">
           <input
             value={name}
             onChange={(e) => setName(e.target.value)}
@@ -205,20 +205,7 @@ export default function WorkspacePage() {
 
       <ThemePicker workspaceId={workspaceId} current={theme} canEdit={canManageWorkspace} />
 
-      <section className="mt-12">
-        <h2 className="text-sm font-medium uppercase tracking-wide text-faint">Members</h2>
-        <ul className="mt-3 divide-y divide-line rounded-lg border border-line bg-raised">
-          {members.data?.members.map((member) => (
-            <li key={member.userId} className="flex items-center justify-between px-4 py-2.5">
-              <span>
-                <span className="text-sm text-content">{member.name}</span>
-                <span className="ml-2 text-xs text-faint">{member.email}</span>
-              </span>
-              <RoleBadge role={member.role} />
-            </li>
-          ))}
-        </ul>
-      </section>
+      <MemberList workspaceId={workspaceId} viewerRole={role} />
     </main>
   );
 }
