@@ -6,7 +6,7 @@ import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { useRef } from 'react';
 import { ErrorState } from '../../../../../components/ui.tsx';
-import { api } from '../../../../../lib/api.ts';
+import { api, type WorkspaceSummary } from '../../../../../lib/api.ts';
 import { useDocument } from '../../../../../lib/use-document.ts';
 
 type DocumentMeta = { id: string; title: string };
@@ -19,6 +19,11 @@ export default function DocumentPage() {
     queryKey: ['document', workspaceId, documentId],
     queryFn: () =>
       api<{ document: DocumentMeta }>(`/workspaces/${workspaceId}/documents/${documentId}`),
+  });
+
+  const workspace = useQuery({
+    queryKey: ['workspace', workspaceId],
+    queryFn: () => api<{ workspace: WorkspaceSummary }>(`/workspaces/${workspaceId}`),
   });
 
   const doc = useDocument(workspaceId, documentId);
@@ -55,7 +60,7 @@ export default function DocumentPage() {
         </Link>
         <span className="mx-2">/</span>
         <Link href={`/workspaces/${workspaceId}`} className="hover:text-slate-300">
-          Workspace
+          {workspace.data?.workspace.name ?? '…'}
         </Link>
         <span className="mx-2">/</span>
         <span className="text-slate-300">{meta.data?.document.title ?? 'Document'}</span>

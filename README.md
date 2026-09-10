@@ -1,8 +1,8 @@
 # Relay
 
-A local-first collaborative workspace — workspaces, projects and issues, with
-role-based access control, live updates over WebSockets, and a board that keeps
-working with the network switched off.
+A local-first collaborative workspace — workspaces, projects, issues and
+CRDT-backed documents, with role-based access control, live updates over
+WebSockets, and a board that keeps working with the network switched off.
 
 ![Relay board](docs/screenshots/04-board.png)
 
@@ -74,6 +74,19 @@ propagation is immediate rather than waiting on a poll.
 The presence bar counts distinct people, not tabs, so two windows signed in as
 the same account correctly read `1 online`.
 
+### Collaborative documents
+
+Create a document from the workspace page and open it in two windows. Both
+edit the same paragraph at once, and **both edits survive** — this is a Yjs
+CRDT, so the server never picks a winner.
+
+![Collaborative document](docs/screenshots/08-document-collab.png)
+
+Issue fields merge under last-write-wins, which is fine for a status but
+catastrophic for prose: two people typing in the same sentence would lose one
+of the changes. Documents are the one place that genuinely needs a CRDT, which
+is why they are the only place one is used.
+
 ### Working offline
 
 On the board, cut the network (DevTools → Network → Offline, or turn off
@@ -90,13 +103,17 @@ Reconnect and the queue drains by itself. The placeholder keys become real
 
 ![After reconnect](docs/screenshots/07-after-reconnect.png)
 
-**Scope, honestly:** this is offline for the board's *data*. The mutation queue
-and the issue store live in IndexedDB and survive a reload — there is
-[a test](tests/sync.test.ts) that constructs a fresh engine over the same
-storage and flushes the queue it finds. What is *not* done is offline delivery
-of the app itself: a cold page load with no network fails, because there is no
-service worker caching the app shell, and routes other than the board still
-fetch. That is the next piece of work, not a claim being made here.
+Reload the page while still offline and the board comes back — a service worker
+serves the app shell from cache, and the issue store and mutation queue are read
+from IndexedDB.
+
+![Offline cold reload](docs/screenshots/09-offline-cold-reload.png)
+
+**Scope, honestly:** the board is the offline-capable route. Other pages still
+fetch and will show the offline fallback if visited cold with no connection.
+The service worker is network-first for navigations and cache-first for
+fingerprinted assets; API and WebSocket traffic is never cached, because those
+responses depend on who is asking.
 
 ### Roles and permissions
 
@@ -178,11 +195,11 @@ same port; skip `db:start` in that case.
 ```
 apps/
   api/          Fastify: routes, guards, mutations
-  realtime/     Bun WebSocket gateway: fan-out + presence
+  realtime/     Bun WebSocket gateway: fan-out, presence, document rooms
   web/          Next.js client
 packages/
   shared/       Permission matrix, domain enums, wire contracts
-  database/     Drizzle schema, migrations, event bus
+  database/     Drizzle schema, migrations, event bus, CRDT persistence
   auth/         Argon2 hashing, sessions
   sync/         Offline store, mutation queue, reconciliation
 scripts/        Dev database lifecycle, seeding, admin bootstrap
@@ -326,6 +343,44 @@ block every later mutation behind it. Those are dropped and the local change
 rolled back. 408 and 429 are explicitly treated as transient, since they mean
 "later", not "no".
 
+### Documents are stored as CRDT bytes, not text
+
+`documents` holds a compacted Yjs snapshot; `document_updates` is an
+append-only log of updates recorded after it. Writing a full snapshot per
+keystroke would rewrite the whole document for a one-character change, so
+appending keeps a write proportional to the edit. Compaction folds the log back
+in past a threshold.
+
+It needs no transaction. Compaction is bounded by the highest sequence number
+it read, so an edit arriving mid-compaction survives; and if the process dies
+between writing the snapshot and deleting the log, the log is simply reapplied
+on load. Yjs updates are idempotent, so the result is identical.
+
+The content column is `bytea` rather than text because the merge rules live in
+the data structure. Storing plain text would force the server to choose a
+winner, which is the thing CRDTs exist to avoid.
+
+### The gateway serialises messages per connection
+
+Handlers are async, and the runtime does not wait for one to finish before
+delivering the next. A client sending `subscribe` immediately followed by
+`doc.open` raced: the second ran while the first was still awaiting its
+membership lookup, saw no workspace on the socket, and was rejected — leaving
+the editor stuck on "Connecting…". Messages are now chained per connection so
+observable order matches wire order.
+
+### "Online" means reachable, not connected
+
+`navigator.onLine` is false only when there is no network interface at all.
+Behind a captive portal, or against a server that is down, it happily reports
+true — which showed up in testing as the UI claiming "Synced" while every
+request was failing.
+
+The indicator now requires both signals: an interface *and* a sync attempt that
+actually succeeded. Retries keep running whenever an interface exists, because
+a failure is exactly the state that needs re-testing and a recovering server
+emits no `online` event to wake anything up.
+
 ### Sessions are opaque, not JWTs
 
 Session lookup costs one indexed read per request. In exchange, signing out
@@ -347,7 +402,7 @@ body.
 
 ## Testing
 
-**87 tests** against a real Postgres rather than mocks. The behaviour under test
+**117 tests** against a real Postgres rather than mocks. The behaviour under test
 — unique constraints, cascades, row locks, transactional `NOTIFY` — is behaviour
 the database provides, so a fake would only prove the fake works.
 
@@ -363,6 +418,8 @@ bun test
 | `issues.test.ts`        | Numbering under concurrency, assignment, cascades                |
 | `realtime.test.ts`      | Socket auth, fan-out, cross-workspace isolation, presence        |
 | `sync.test.ts`          | Offline queue, retry, poison messages, convergence               |
+| `documents.test.ts`     | CRDT convergence, compaction, persistence round-trips            |
+| `text.test.ts`          | Textarea-to-CRDT edit extraction, 500 randomised round-trips     |
 | `idempotency.test.ts`   | Exactly-once mutations, key misuse, client-generated ids         |
 
 The ones worth reading are adversarial: pasting another tenant's project id into
@@ -381,15 +438,19 @@ ceiling, a socket subscribing to a workspace it doesn't belong to, and the
 - Projects and issues with per-project keys, comments
 - Realtime updates and presence over WebSockets
 - Offline-first board: IndexedDB store, durable mutation queue, exactly-once sync
+- Service worker so the app shell loads with no network
+- CRDT documents (Yjs) with live cursors, stored as an append-only update log
 - Next.js client with optimistic updates
-- 87 tests, CI, linting, typechecking
+- 117 tests, CI, linting, typechecking
 
 **Next**
 
-- Service worker so the app shell loads with no network
-- CRDT documents (Yjs) for collaborative text
-- Background workers, notifications, search, file uploads
+- Background jobs, notifications, search, file uploads
+- Rate limiting on auth and mutation endpoints
 - Load testing and OpenTelemetry
+
+See [docs/ROADMAP.md](docs/ROADMAP.md) for the full plan, including an honest
+list of what is thin in what already exists.
 
 Collaborative text is the one remaining piece that genuinely needs CRDTs. Issue
 fields converge fine under last-write-wins per field — two people editing

@@ -2,7 +2,7 @@
 
 Where Relay is, what is left, and what is deliberately not being built.
 
-Status as of the current commit: **87 tests, lint and typecheck clean, CI green.**
+Status as of the current commit: **117 tests, lint and typecheck clean, CI green.**
 
 ---
 
@@ -42,21 +42,30 @@ Status as of the current commit: **87 tests, lint and typecheck clean, CI green.
 - Exactly-once mutations: client-generated ids plus a server idempotency ledger
 - Poison-message handling — permanent refusals are dropped, 408/429 are not
 
+### 5 · Collaborative documents
+
+The one place that genuinely needs CRDTs. Issue fields converge fine under
+last-write-wins per field; concurrent edits to the *same paragraph* do not.
+
+- `documents` table with an append-only update log and periodic compaction
+- Yjs sync over the existing WebSocket gateway, with in-memory document rooms
+- Awareness — live cursors, relayed and never persisted
+- Editor bound to a shared `Y.Text`
+- Convergence tests: concurrent edits, out-of-order delivery, duplicate
+  updates, five replicas gossiping pairwise, and two live sockets
+
 ---
 
 ## In progress
 
-### 5 · Collaborative documents
+### 7 · Hardening *(partly done)*
 
-The remaining piece that genuinely needs CRDTs. Issue fields converge fine under
-last-write-wins per field; concurrent edits to the *same paragraph* do not.
-
-- [ ] `documents` table with an append-only update log and periodic compaction
-- [ ] Yjs document sync over the existing WebSocket gateway
-- [ ] Awareness — live cursors and selections
-- [ ] Editor UI bound to a shared `Y.Text`
-- [ ] Convergence tests: concurrent offline edits, applied in different orders,
-      must produce identical documents
+- [x] Service worker so the app shell loads with no network. Network-first for
+      navigations, cache-first for fingerprinted assets, never for API traffic
+- [ ] Rate limiting on auth and mutation endpoints
+- [ ] Session cleanup job for expired rows
+- [ ] Docker verified end to end (compose file exists but has never run here —
+      no container runtime on this machine)
 
 ---
 
@@ -72,15 +81,6 @@ last-write-wins per field; concurrent edits to the *same paragraph* do not.
 - [ ] File attachments via presigned URLs (needs an S3-compatible target)
 - [ ] Search — Postgres full-text first, with a documented comparison against
       a dedicated engine rather than adopting one reflexively
-
-### 7 · Hardening
-
-- [ ] Service worker so the app shell loads with no network. Until this lands,
-      "offline" means the board's data layer, not a cold start
-- [ ] Rate limiting on auth and mutation endpoints
-- [ ] Session cleanup job for expired rows
-- [ ] Docker verified end to end (compose file exists but has never run here —
-      no container runtime on this machine)
 
 ### 8 · Operations
 
@@ -100,8 +100,10 @@ Honest list of things that are built but thin.
 - **Comments have no UI.** The API, permissions and realtime events are done and
   tested; nothing renders them.
 - **Board uses a status dropdown, not drag-and-drop.**
-- **Offline covers the board only.** Other routes fetch normally and fail
-  without a connection.
+- **Offline covers the board only.** The app shell is cached, but other routes
+  still fetch their data and will show the offline fallback if visited cold.
+- **The document editor is a plain textarea.** No formatting, and remote
+  cursors are listed by name rather than drawn inline.
 - **Members cannot be managed from the UI.** Invite, role change and removal are
   API-only.
 - **No password reset or email verification** — both need the mailer from
