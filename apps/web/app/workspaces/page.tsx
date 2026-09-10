@@ -1,9 +1,11 @@
 'use client';
 
+import { can } from '@relay/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { type FormEvent, useEffect, useState } from 'react';
+import { DeleteButton } from '../../components/delete-button.tsx';
 import { NotificationBell } from '../../components/notification-bell.tsx';
 import { RoleBadge } from '../../components/ui.tsx';
 import { api, type Me, type WorkspaceSummary } from '../../lib/api.ts';
@@ -31,6 +33,12 @@ export default function WorkspacesPage() {
       setName('');
       queryClient.invalidateQueries({ queryKey: ['workspaces'] });
     },
+  });
+
+  const deleteWorkspace = useMutation({
+    mutationFn: (workspaceId: string) =>
+      api<void>(`/workspaces/${workspaceId}`, { method: 'DELETE' }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['workspaces'] }),
   });
 
   const signOut = useMutation({
@@ -99,17 +107,20 @@ export default function WorkspacesPage() {
       </form>
 
       {createWorkspace.isError && (
-        <p role="alert" className="mt-3 text-sm text-red-400">
+        <p role="alert" className="mt-3 text-sm text-danger-soft">
           {(createWorkspace.error as Error).message}
         </p>
       )}
 
       <ul className="mt-8 space-y-2">
         {workspaces.data?.workspaces.map((workspace) => (
-          <li key={workspace.id}>
+          <li
+            key={workspace.id}
+            className="flex items-center rounded-lg border border-line bg-raised transition hover:border-faint"
+          >
             <Link
               href={`/workspaces/${workspace.id}`}
-              className="flex items-center justify-between rounded-lg border border-line bg-raised px-4 py-3 transition hover:border-faint"
+              className="flex flex-1 items-center justify-between px-4 py-3"
             >
               <span>
                 <span className="font-medium text-content">{workspace.name}</span>
@@ -117,6 +128,15 @@ export default function WorkspacesPage() {
               </span>
               <RoleBadge role={workspace.role} />
             </Link>
+
+            <DeleteButton
+              allowed={can(workspace.role, 'workspace:delete')}
+              kind="workspace"
+              name={workspace.name}
+              cascade="Every project, issue, document, comment and membership in this workspace is deleted. Other members lose access immediately."
+              onConfirm={() => deleteWorkspace.mutateAsync(workspace.id)}
+              className="mr-2"
+            />
           </li>
         ))}
       </ul>

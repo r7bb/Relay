@@ -1,9 +1,11 @@
 'use client';
 
+import { can } from '@relay/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { type FormEvent, useState } from 'react';
+import { DeleteButton } from '../../../components/delete-button.tsx';
 import { MemberList } from '../../../components/member-list.tsx';
 import { NotificationBell } from '../../../components/notification-bell.tsx';
 import { PresenceBar } from '../../../components/presence.tsx';
@@ -57,6 +59,18 @@ export default function WorkspacePage() {
     },
   });
 
+  const deleteProject = useMutation({
+    mutationFn: (projectId: string) =>
+      api<void>(`/workspaces/${workspaceId}/projects/${projectId}`, { method: 'DELETE' }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['projects', workspaceId] }),
+  });
+
+  const deleteDocument = useMutation({
+    mutationFn: (documentId: string) =>
+      api<void>(`/workspaces/${workspaceId}/documents/${documentId}`, { method: 'DELETE' }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['documents', workspaceId] }),
+  });
+
   const createProject = useMutation({
     mutationFn: (projectName: string) =>
       api<{ project: ProjectSummary }>(`/workspaces/${workspaceId}/projects`, {
@@ -90,6 +104,9 @@ export default function WorkspacePage() {
   const canCreateProject = role !== undefined && role !== 'GUEST';
   // Theme is a workspace setting, so it needs the same permission as renaming.
   const canManageWorkspace = role === 'OWNER' || role === 'ADMIN';
+  // Documents are governed by the project permission rather than one of their
+  // own, which is what the API checks too.
+  const canDelete = role !== undefined && can(role, 'project:delete');
 
   return (
     <main className="mx-auto max-w-5xl px-6 py-12">
@@ -139,19 +156,32 @@ export default function WorkspacePage() {
 
       <section className="mt-8 grid gap-3 sm:grid-cols-2">
         {projects.data?.projects.map((project) => (
-          <Link
+          // The delete control is a sibling of the link rather than inside it:
+          // a button nested in an anchor is invalid, and swallowing the click
+          // to work around that is worse than laying it out properly.
+          <div
             key={project.id}
-            href={`/workspaces/${workspaceId}/projects/${project.id}`}
-            className="rounded-lg border border-line bg-raised p-4 transition hover:border-faint"
+            className="relative rounded-lg border border-line bg-raised transition hover:border-faint"
           >
-            <div className="flex items-center justify-between">
-              <span className="font-medium text-content">{project.name}</span>
-              <span className="font-mono text-xs text-faint">{project.key}</span>
-            </div>
-            <p className="mt-2 text-xs text-faint">
-              {project.openIssues} open {project.openIssues === 1 ? 'issue' : 'issues'}
-            </p>
-          </Link>
+            <Link href={`/workspaces/${workspaceId}/projects/${project.id}`} className="block p-4">
+              <div className="flex items-center justify-between">
+                <span className="font-medium text-content">{project.name}</span>
+                <span className="font-mono text-xs text-faint">{project.key}</span>
+              </div>
+              <p className="mt-2 text-xs text-faint">
+                {project.openIssues} open {project.openIssues === 1 ? 'issue' : 'issues'}
+              </p>
+            </Link>
+
+            <DeleteButton
+              allowed={canDelete}
+              kind="project"
+              name={project.name}
+              cascade="Every issue and comment in this project is deleted with it."
+              onConfirm={() => deleteProject.mutateAsync(project.id)}
+              className="absolute bottom-2.5 right-2"
+            />
+          </div>
         ))}
       </section>
 
@@ -185,13 +215,25 @@ export default function WorkspacePage() {
 
         <ul className="mt-3 space-y-2">
           {documentList.data?.documents.map((document) => (
-            <li key={document.id}>
+            <li
+              key={document.id}
+              className="flex items-center rounded-lg border border-line bg-raised transition hover:border-faint"
+            >
               <Link
                 href={`/workspaces/${workspaceId}/documents/${document.id}`}
-                className="block rounded-lg border border-line bg-raised px-4 py-3 text-sm text-content transition hover:border-faint"
+                className="flex-1 px-4 py-3 text-sm text-content"
               >
                 {document.title}
               </Link>
+
+              <DeleteButton
+                allowed={canDelete}
+                kind="document"
+                name={document.title}
+                cascade="The document and its entire edit history are removed."
+                onConfirm={() => deleteDocument.mutateAsync(document.id)}
+                className="mr-2"
+              />
             </li>
           ))}
         </ul>

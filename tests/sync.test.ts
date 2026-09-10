@@ -89,6 +89,14 @@ class FakeTransport implements SyncTransport {
     return { issue };
   }
 
+  async deleteIssue(_workspaceId: string, issueId: string) {
+    this.calls.push({ method: 'delete', key: issueId });
+    if (this.failWith) throw this.failWith;
+
+    // Mirrors the API: deleting something that is not there is a 404.
+    if (!this.serverIssues.delete(issueId)) throw new SyncError('Issue not found', 404);
+  }
+
   async listIssues(_workspaceId: string, projectId: string) {
     return {
       issues: [...this.serverIssues.values()].filter((i) => i.projectId === projectId),
@@ -419,5 +427,130 @@ describe('durability', () => {
     expect(flushResult.flushed).toBe(1);
     expect(issues).toHaveLength(1);
     expect(await storage.getAll(STORE_ISSUES)).toHaveLength(1);
+  });
+});
+
+/**
+ * Deleting offline.
+ *
+ * The interesting case is deleting something that was itself created offline
+ * and has never reached the server -- the pair has to converge whether or not
+ * the create happened to be in flight when the delete was made.
+ */
+describe('deleting while offline', () => {
+  test('the row disappears locally before the server is told', async () => {
+    const issue = await engine.createIssue(WORKSPACE, PROJECT, { title: 'Doomed' });
+    await engine.flush();
+
+    transport.failWith = new SyncError('offline');
+    await engine.deleteIssue(WORKSPACE, issue.id);
+
+    expect(await engine.localIssues(PROJECT)).toEqual([]);
+    // Still queued, because the server has not acknowledged it.
+    expect(await engine.queue.size()).toBe(1);
+  });
+
+  test('the deletion reaches the server once the queue drains', async () => {
+    const issue = await engine.createIssue(WORKSPACE, PROJECT, { title: 'Doomed' });
+    await engine.flush();
+    expect(transport.serverIssues.size).toBe(1);
+
+    await engine.deleteIssue(WORKSPACE, issue.id);
+    await engine.flush();
+
+    expect(transport.serverIssues.size).toBe(0);
+    expect(await engine.queue.size()).toBe(0);
+  });
+
+  test('queued edits for a deleted issue are dropped rather than flushed', async () => {
+    const issue = await engine.createIssue(WORKSPACE, PROJECT, { title: 'Doomed' });
+    await engine.flush();
+
+    transport.failWith = new SyncError('offline');
+    await engine.updateIssue(WORKSPACE, issue.id, { title: 'Renamed' });
+    await engine.deleteIssue(WORKSPACE, issue.id);
+
+    transport.failWith = null;
+    await engine.flush();
+
+    // Only the delete went out; renaming a row on its way out is wasted work.
+    expect(transport.calls.filter((c) => c.method === 'update')).toEqual([]);
+    expect(transport.serverIssues.size).toBe(0);
+  });
+
+  /**
+   * Created and deleted with no connection in between. The server never heard
+   * of the row, so the delete 404s -- which is success, not a failure.
+   */
+  test('an issue created and deleted offline leaves nothing behind', async () => {
+    transport.failWith = new SyncError('offline');
+    const issue = await engine.createIssue(WORKSPACE, PROJECT, { title: 'Never synced' });
+    await engine.flush();
+
+    await engine.deleteIssue(WORKSPACE, issue.id);
+
+    transport.failWith = null;
+    const result = await engine.flush();
+
+    expect(await engine.localIssues(PROJECT)).toEqual([]);
+    expect(transport.serverIssues.size).toBe(0);
+    expect(await engine.queue.size()).toBe(0);
+    // A 404 on a delete is the desired state, so it is flushed, not discarded.
+    expect(result.discarded).toBe(0);
+    expect(result.flushed).toBe(1);
+  });
+
+  /**
+   * The race the create-cancellation must not lose: the create is already on
+   * the server by the time the delete flushes. Reconcile would resurrect the
+   * row if the delete had been optimised away.
+   */
+  test('a delete still lands when the create it cancels already reached the server', async () => {
+    const issue = await engine.createIssue(WORKSPACE, PROJECT, { title: 'Racy' });
+    // The create lands...
+    await engine.flush();
+    // ...and only then is the delete made.
+    await engine.deleteIssue(WORKSPACE, issue.id);
+    await engine.flush();
+
+    await engine.reconcile(WORKSPACE, PROJECT);
+
+    expect(await engine.localIssues(PROJECT)).toEqual([]);
+    expect(transport.serverIssues.size).toBe(0);
+  });
+
+  test('reconcile does not resurrect a row whose delete is still queued', async () => {
+    const issue = await engine.createIssue(WORKSPACE, PROJECT, { title: 'Doomed' });
+    await engine.flush();
+
+    transport.failWith = new SyncError('offline');
+    await engine.deleteIssue(WORKSPACE, issue.id);
+    transport.failWith = null;
+
+    // The server still has it, but locally the user has deleted it.
+    await engine.reconcile(WORKSPACE, PROJECT);
+    expect(await engine.localIssues(PROJECT)).toEqual([]);
+  });
+
+  /** A refused delete is repaired by reconcile, which is the honest outcome. */
+  test('a permanently refused delete puts the row back', async () => {
+    const issue = await engine.createIssue(WORKSPACE, PROJECT, { title: 'Protected' });
+    await engine.flush();
+
+    transport.failWith = new SyncError('Forbidden', 403);
+    await engine.deleteIssue(WORKSPACE, issue.id);
+
+    const result = await engine.flush();
+    expect(result.discarded).toBe(1);
+
+    transport.failWith = null;
+    await engine.reconcile(WORKSPACE, PROJECT);
+
+    expect((await engine.localIssues(PROJECT)).map((i) => i.title)).toEqual(['Protected']);
+  });
+
+  test('deleting something that is not there is a no-op', async () => {
+    await engine.deleteIssue(WORKSPACE, 'nonexistent');
+    expect(await engine.queue.size()).toBe(0);
   });
 });

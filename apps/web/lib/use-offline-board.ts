@@ -28,6 +28,7 @@ export type BoardState = {
     issueId: string,
     input: Partial<{ title: string; status: IssueStatus; priority: IssuePriority }>,
   ) => Promise<void>;
+  deleteIssue: (issueId: string) => Promise<void>;
   /** Pull server state, e.g. after a realtime event. */
   refresh: () => Promise<void>;
 };
@@ -139,5 +140,23 @@ export function useOfflineBoard(workspaceId: string, projectId: string): BoardSt
     [engine, workspaceId, readLocal, sync],
   );
 
-  return { issues, online, pending, loading, createIssue, updateIssue, refresh: sync };
+  const deleteIssue = useCallback(
+    async (issueId: string) => {
+      await engine.deleteIssue(workspaceId, issueId);
+      await readLocal();
+      void sync();
+    },
+    [engine, workspaceId, readLocal, sync],
+  );
+
+  return {
+    issues,
+    online,
+    pending,
+    loading,
+    createIssue,
+    updateIssue,
+    deleteIssue,
+    refresh: sync,
+  };
 }

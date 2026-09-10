@@ -19,13 +19,51 @@
  */
 const MENTION = /(^|[^\w@.-])@([a-z0-9](?:[a-z0-9._-]*[a-z0-9])?)/gi;
 
+/** A run of text, tagged with the handle it mentions if it is one. */
+export type MentionSegment = {
+  text: string;
+  /** Lowercased handle, or null for ordinary text. */
+  handle: string | null;
+};
+
+/**
+ * Split `text` into alternating plain and mention runs.
+ *
+ * This exists so the client can highlight mentions without owning a second
+ * copy of the grammar. Highlighting and notifying disagreeing is a subtle bug
+ * -- a handle styled as a mention that silently notifies nobody -- and a
+ * comment saying "keep these in sync" is not a mechanism. Deriving both from
+ * one traversal makes the two agree by construction.
+ *
+ * Concatenating every `text` returns the input unchanged.
+ */
+export function splitMentions(text: string): MentionSegment[] {
+  const segments: MentionSegment[] = [];
+  let cursor = 0;
+
+  for (const match of text.matchAll(MENTION)) {
+    const handle = match[2];
+    if (handle === undefined || match.index === undefined) continue;
+
+    // The match starts at the boundary character, not the `@`.
+    const start = match.index + (match[1] ?? '').length;
+    if (start > cursor) segments.push({ text: text.slice(cursor, start), handle: null });
+
+    segments.push({ text: `@${handle}`, handle: handle.toLowerCase() });
+    cursor = start + handle.length + 1;
+  }
+
+  if (cursor < text.length) segments.push({ text: text.slice(cursor), handle: null });
+
+  return segments;
+}
+
 /** Handles referenced in `text`, lowercased, in first-seen order, deduplicated. */
 export function parseMentions(text: string): string[] {
   const seen = new Set<string>();
 
-  for (const match of text.matchAll(MENTION)) {
-    const handle = match[2]?.toLowerCase();
-    if (handle) seen.add(handle);
+  for (const segment of splitMentions(text)) {
+    if (segment.handle) seen.add(segment.handle);
   }
 
   return [...seen];

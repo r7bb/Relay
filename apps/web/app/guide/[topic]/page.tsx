@@ -108,7 +108,7 @@ function Guide() {
       </div>
 
       {createSample.isError && (
-        <p role="alert" className="mt-3 text-sm text-red-400">
+        <p role="alert" className="mt-3 text-sm text-danger-soft">
           {(createSample.error as Error).message}
         </p>
       )}

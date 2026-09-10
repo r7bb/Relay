@@ -28,6 +28,18 @@ export default {
           soft: token('accent-soft'),
           contrast: token('accent-contrast'),
         },
+        /**
+         * Destructive actions and errors. Literal values rather than
+         * variables, for the reason above: this red means the same thing in
+         * every theme, so it must not move with one.
+         */
+        danger: {
+          DEFAULT: '#ef4444',
+          hover: '#dc2626',
+          /** Red text on a themed surface, where the solid fill is too heavy. */
+          soft: '#f87171',
+          contrast: '#ffffff',
+        },
       },
     },
   },

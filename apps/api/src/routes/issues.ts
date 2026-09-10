@@ -10,7 +10,7 @@ import {
   users,
   workspaceMembers,
 } from '@relay/database';
-import { createIssueSchema, listIssuesQuerySchema, updateIssueSchema } from '@relay/shared';
+import { createIssueSchema, isUuid, listIssuesQuerySchema, updateIssueSchema } from '@relay/shared';
 import { and, desc, eq, sql } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
 import { ApiError } from '../errors.ts';
@@ -24,11 +24,9 @@ import { withIdempotency } from '../plugins/idempotency.ts';
 import { parse } from '../validate.ts';
 import { loadProject } from './projects.ts';
 
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
 /** Tenant-scoped issue lookup. See the note on `loadProject`. */
 async function loadIssue(db: Executor, workspaceId: string, issueId: string) {
-  if (!UUID_RE.test(issueId)) throw ApiError.notFound('Issue not found');
+  if (!isUuid(issueId)) throw ApiError.notFound('Issue not found');
 
   const [issue] = await db
     .select()

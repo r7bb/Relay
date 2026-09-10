@@ -1,10 +1,9 @@
 import { type Database, notifications, users } from '@relay/database';
+import { isUuid } from '@relay/shared';
 import { and, desc, eq, isNull } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
 import { ApiError } from '../errors.ts';
 import { currentUser, requireAuth } from '../plugins/authz.ts';
-
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /**
  * The signed-in user's inbox.
@@ -55,7 +54,7 @@ export async function notificationRoutes(app: FastifyInstance, opts: { db: Datab
     const user = currentUser(request);
     const { notificationId } = request.params as { notificationId: string };
 
-    if (!UUID_RE.test(notificationId)) throw ApiError.notFound('Notification not found');
+    if (!isUuid(notificationId)) throw ApiError.notFound('Notification not found');
 
     const [updated] = await db
       .update(notifications)
@@ -71,6 +70,35 @@ export async function notificationRoutes(app: FastifyInstance, opts: { db: Datab
 
     return { notification: updated };
   });
+
+  app.delete(
+    '/notifications/:notificationId',
+    { preHandler: requireAuth },
+    async (request, reply) => {
+      const user = currentUser(request);
+      const { notificationId } = request.params as { notificationId: string };
+
+      if (!isUuid(notificationId)) throw ApiError.notFound('Notification not found');
+
+      /*
+       * Dismissing is a real delete rather than a `dismissedAt` flag.
+       *
+       * The dedupe key is what stops the worker re-sending the same nudge, and
+       * it is enforced by a unique index on `(user_id, dedupe_key)`. Keeping
+       * dismissed rows would mean that index also permanently suppresses the
+       * notification -- dismiss a weekly nudge once and it never returns.
+       * Deleting the row frees the key, so next week's scan can raise it again.
+       */
+      const [deleted] = await db
+        .delete(notifications)
+        .where(and(eq(notifications.id, notificationId), eq(notifications.userId, user.id)))
+        .returning({ id: notifications.id });
+
+      if (!deleted) throw ApiError.notFound('Notification not found');
+
+      return reply.status(204).send();
+    },
+  );
 
   app.post('/notifications/read-all', { preHandler: requireAuth }, async (request) => {
     const user = currentUser(request);

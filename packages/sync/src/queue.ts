@@ -32,6 +32,15 @@ export type QueuedMutation =
       queuedAt: number;
       attempts: number;
       lastError?: string;
+    }
+  | {
+      kind: 'issue.delete';
+      id: string;
+      workspaceId: string;
+      issueId: string;
+      queuedAt: number;
+      attempts: number;
+      lastError?: string;
     };
 
 export type MutationKind = QueuedMutation['kind'];

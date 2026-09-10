@@ -1,10 +1,11 @@
 'use client';
 
-import { diffEdit } from '@relay/shared';
-import { useQuery } from '@tanstack/react-query';
+import { can, diffEdit } from '@relay/shared';
+import { useMutation, useQuery } from '@tanstack/react-query';
 import Link from 'next/link';
-import { useParams, useSearchParams } from 'next/navigation';
+import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, useEffect, useRef } from 'react';
+import { DeleteButton } from '../../../../../components/delete-button.tsx';
 import { ErrorState } from '../../../../../components/ui.tsx';
 import { api, type WorkspaceSummary } from '../../../../../lib/api.ts';
 import { lastTheme, useApplyTheme } from '../../../../../lib/theme.ts';
@@ -14,6 +15,7 @@ type DocumentMeta = { id: string; title: string };
 
 function DocumentView() {
   const { workspaceId, documentId } = useParams<{ workspaceId: string; documentId: string }>();
+  const router = useRouter();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const meta = useQuery({
@@ -53,6 +55,15 @@ function DocumentView() {
     seeded.current = true;
     doc.edit(0, 0, seed);
   }, [seed, doc.connected, doc.text, doc.edit]);
+
+  const remove = useMutation({
+    mutationFn: () =>
+      api<void>(`/workspaces/${workspaceId}/documents/${documentId}`, { method: 'DELETE' }),
+    onSuccess: () => router.replace(`/workspaces/${workspaceId}`),
+  });
+
+  const role = workspace.data?.workspace.role;
+  const canDelete = role !== undefined && can(role, 'project:delete');
 
   if (meta.isError) return <ErrorState message={(meta.error as Error).message} />;
 
@@ -111,6 +122,14 @@ function DocumentView() {
               : 'Connected'
             : 'Connecting…'}
         </span>
+
+        <DeleteButton
+          allowed={canDelete}
+          kind="document"
+          name={meta.data?.document.title ?? 'this document'}
+          cascade="The document and its entire edit history are removed, for everyone currently editing it too."
+          onConfirm={() => remove.mutateAsync()}
+        />
       </header>
 
       {others.length > 0 && (

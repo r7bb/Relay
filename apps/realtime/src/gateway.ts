@@ -6,12 +6,13 @@ import {
   subscribeToEvents,
   subscribeToPresence,
 } from '@relay/database';
-import type {
-  ClientMessage,
-  DocumentAwareness,
-  PresenceMessage,
-  ServerEvent,
-  ServerMessage,
+import {
+  type ClientMessage,
+  type DocumentAwareness,
+  isUuid,
+  type PresenceMessage,
+  type ServerEvent,
+  type ServerMessage,
 } from '@relay/shared';
 import type postgres from 'postgres';
 import { DocumentRooms, documentInWorkspace } from './documents.ts';
@@ -29,8 +30,6 @@ import { PresenceRegistry } from './presence.ts';
  * It shares the database and the session logic with the API, so there is one
  * definition of who you are and what you may see.
  */
-
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /** How often each instance re-announces its presence entries to peers. Must be
  * comfortably below PRESENCE_TTL_MS so peers never expire a live connection. */
@@ -318,7 +317,7 @@ export async function createGateway(options: GatewayOptions) {
       return send(socket, { type: 'error', message: 'Subscribe to a workspace first' });
     }
 
-    if (!UUID_RE.test(documentId) || !(await documentInWorkspace(db, documentId, workspaceId))) {
+    if (!isUuid(documentId) || !(await documentInWorkspace(db, documentId, workspaceId))) {
       return send(socket, { type: 'error', message: 'Document not found' });
     }
 

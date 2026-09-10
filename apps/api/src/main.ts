@@ -3,9 +3,9 @@ import { buildApp } from './app.ts';
 import { loadEnv } from './env.ts';
 
 const env = loadEnv();
-const { db, close } = createDatabase(env.DATABASE_URL);
+const { db, close } = createDatabase(env.DATABASE_URL, { max: env.DB_POOL_MAX });
 
-const app = buildApp({ db, env, logger: true });
+const app = buildApp({ db, env, logger: env.API_LOG });
 
 await app.listen({ port: env.API_PORT, host: env.API_HOST });
 

@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { handleFor, parseMentions, resolveMentions } from '@relay/shared';
+import { handleFor, parseMentions, resolveMentions, splitMentions } from '@relay/shared';
 
 /**
  * Mention parsing decides who gets notified, so its failure modes are
@@ -98,5 +98,77 @@ describe('resolveMentions', () => {
 
   test('a member list that is empty resolves nothing', () => {
     expect(resolveMentions('@rohit', [])).toEqual([]);
+  });
+});
+
+/**
+ * The client highlights mentions using this split, and the worker notifies
+ * using `parseMentions`. They used to be two regexes kept together by a
+ * comment; these tests are what replaces the comment.
+ */
+describe('splitMentions', () => {
+  test('reassembles into the original text', () => {
+    for (const text of [
+      '',
+      'no mentions here',
+      '@rohit at the start',
+      'at the end @rohit',
+      'hey @rohit and @ada, see ada@relay.dev',
+      '@@rohit',
+      'thanks @ada!',
+      'multi\nline @rohit text',
+    ]) {
+      expect(
+        splitMentions(text)
+          .map((s) => s.text)
+          .join(''),
+      ).toBe(text);
+    }
+  });
+
+  test('tags mention runs and leaves the rest alone', () => {
+    expect(splitMentions('hi @ada!')).toEqual([
+      { text: 'hi ', handle: null },
+      { text: '@ada', handle: 'ada' },
+      { text: '!', handle: null },
+    ]);
+  });
+
+  test('a mention at position zero produces no empty leading run', () => {
+    expect(splitMentions('@ada hi')).toEqual([
+      { text: '@ada', handle: 'ada' },
+      { text: ' hi', handle: null },
+    ]);
+  });
+
+  test('an email address is not split into a mention', () => {
+    expect(splitMentions('write to ada@relay.dev')).toEqual([
+      { text: 'write to ada@relay.dev', handle: null },
+    ]);
+  });
+
+  /**
+   * The property that matters: anything highlighted is notified, and anything
+   * notified is highlighted. Drift between the two is the bug this prevents.
+   */
+  test('agrees with parseMentions on every sample', () => {
+    for (const text of [
+      'hey @rohit and @ada',
+      'ada@relay.dev is not @ada... or is it @ada',
+      '@a @b @c @a',
+      'thanks @ada! and @Rohit.',
+      'nothing to see',
+      '@ADA shouting',
+    ]) {
+      const fromSplit = [
+        ...new Set(
+          splitMentions(text)
+            .map((s) => s.handle)
+            .filter((h): h is string => h !== null),
+        ),
+      ];
+
+      expect(fromSplit).toEqual(parseMentions(text));
+    }
   });
 });

@@ -1,5 +1,5 @@
 import { comments, type Database, enqueue, issues, publishEvent, users } from '@relay/database';
-import { can, createCommentSchema } from '@relay/shared';
+import { can, createCommentSchema, isUuid } from '@relay/shared';
 import { and, asc, eq } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
 import { ApiError } from '../errors.ts';
@@ -11,8 +11,6 @@ import {
 } from '../plugins/authz.ts';
 import { parse } from '../validate.ts';
 
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
 export async function commentRoutes(app: FastifyInstance, opts: { db: Database }) {
   const { db } = opts;
 
@@ -23,7 +21,7 @@ export async function commentRoutes(app: FastifyInstance, opts: { db: Database }
       const { workspaceId } = currentMembership(request);
       const { issueId } = request.params as { issueId: string };
 
-      if (!UUID_RE.test(issueId)) throw ApiError.notFound('Issue not found');
+      if (!isUuid(issueId)) throw ApiError.notFound('Issue not found');
 
       const rows = await db
         .select({
@@ -51,7 +49,7 @@ export async function commentRoutes(app: FastifyInstance, opts: { db: Database }
       const { issueId } = request.params as { issueId: string };
       const input = parse(createCommentSchema, request.body);
 
-      if (!UUID_RE.test(issueId)) throw ApiError.notFound('Issue not found');
+      if (!isUuid(issueId)) throw ApiError.notFound('Issue not found');
 
       // Confirm the issue is in this workspace before writing; the foreign key
       // alone would happily accept an issue belonging to another tenant.
@@ -102,7 +100,7 @@ export async function commentRoutes(app: FastifyInstance, opts: { db: Database }
       const { workspaceId, role } = currentMembership(request);
       const { commentId } = request.params as { commentId: string };
 
-      if (!UUID_RE.test(commentId)) throw ApiError.notFound('Comment not found');
+      if (!isUuid(commentId)) throw ApiError.notFound('Comment not found');
 
       const [comment] = await db
         .select({ id: comments.id, authorId: comments.authorId })

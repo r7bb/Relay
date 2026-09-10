@@ -207,6 +207,7 @@ seeded.
 | `bun run typecheck`     | Typecheck every package                       |
 | `bun run lint`          | Biome lint + format check                     |
 | `bun run lint:fix`      | Apply safe lint and format fixes              |
+| `bun run loadtest`      | Measure API throughput and realtime fan-out   |
 
 Bootstrap yourself into a fresh database:
 
@@ -551,7 +552,7 @@ body.
 
 ## Testing
 
-**219 tests** against a real Postgres rather than mocks. The behaviour under test
+**253 tests** against a real Postgres rather than mocks. The behaviour under test
 — unique constraints, cascades, row locks, transactional `NOTIFY` — is behaviour
 the database provides, so a fake would only prove the fake works.
 
@@ -576,12 +577,78 @@ bun test
 | `search.test.ts`        | Stemming, ranking, index freshness, tenant isolation             |
 | `rate-limit.test.ts`    | Budgets, headers, per-caller isolation, retryability             |
 | `pagination.test.ts`    | Keyset paging, stability under concurrent inserts and deletes    |
+| `stats.test.ts`         | Percentile and summary arithmetic behind the load-test numbers   |
+| `uuid.test.ts`          | The id guard every route runs before touching the database       |
 | `idempotency.test.ts`   | Exactly-once mutations, key misuse, client-generated ids         |
 
 The ones worth reading are adversarial: pasting another tenant's project id into
 a URL you *do* have access to, an admin trying to promote itself past its
 ceiling, a socket subscribing to a workspace it doesn't belong to, and the
 25-way concurrent create.
+
+---
+
+## Measured performance
+
+Numbers from `bun run loadtest`, which spawns the API and gateway as separate
+processes and drives them from a third. **These are laptop numbers, not a
+capacity plan** — one machine, loopback networking, local Postgres, and a CPU
+that throttles. They are here because the alternative was describing behaviour
+and quietly implying throughput.
+
+Median of three consecutive runs on an M-series MacBook Pro (14 cores, Bun
+1.4.2, Postgres 18). Full spread is given where it is wide.
+
+**REST API** — 32 concurrent connections, 4 projects, 20% writes, 10s measured
+after a 3s warmup:
+
+| Operation             | p50    | p95    | p99    |
+| --------------------- | ------ | ------ | ------ |
+| Read (list 25 issues) | 6.4 ms | 8.1 ms | 9.6 ms |
+| Write (create issue)  | 9.8 ms | 11.8 ms| 13.5 ms|
+
+**~4,400 req/s**, zero errors. Across the three runs throughput was 3,354 /
+4,386 / 4,424 req/s — the first run of a session is consistently the slowest
+even after the warmup, which is the Postgres page cache filling.
+
+**Realtime fan-out** — 50 subscribed sockets, 20 events/s offered for 10s,
+measured from the moment the write is issued to the moment each subscriber has
+the event:
+
+| Stage                     | p50    | p95    | p99     |
+| ------------------------- | ------ | ------ | ------- |
+| Write acknowledged (HTTP) | 5.4 ms | 7.6 ms | 11.5 ms |
+| First subscriber has it   | 5.4 ms | 7.6 ms | 11.4 ms |
+| *All 50* subscribers      | 5.8 ms | 8.0 ms | 11.9 ms |
+
+**100% delivery** — 29,500 of 29,500 expected receipts across the three runs,
+none dropped. The gap between the first and the last subscriber is ~0.4 ms at
+p50, which is the cost of the fan-out loop itself; the rest is the write.
+
+### Reading these honestly
+
+- **The API phase is closed-loop**, so it describes latency *at that
+  concurrency* and structurally cannot show queue collapse. The fan-out phase
+  is open-loop — events are offered on a fixed schedule regardless of whether
+  the last one finished — because coordinated omission would otherwise hide the
+  backlog the test exists to find.
+- **Throughput is flat in concurrency; latency is linear in it.** A sweep from
+  4 to 64 connections held throughput near its ceiling while p50 tracked
+  Little's Law almost exactly (64 connections: 29.5 ms predicted, 28.3 ms
+  measured). Past roughly 8 connections this machine buys queueing delay, not
+  work.
+- **The load generator is not the bottleneck.** It reports its own event-loop
+  lag every run — p99 under 2 ms throughout — which is what makes the delivery
+  figures the gateway's rather than the harness's. The subscribers share a
+  process with the generator, so that lag is *inside* the fan-out numbers.
+- **A larger database pool did not help.** Raising it from 10 to 60 looked like
+  a 2× win until the runs were interleaved, at which point the effect vanished
+  into run-to-run variance. It is not a finding, so it is not claimed as one.
+
+The harness is Bun rather than k6 — k6 ships as a Go binary and this machine has
+no way to install one. The tradeoff k6 would have removed is that the generator
+runs on the same runtime as the system under test, which is exactly why the
+event-loop lag is reported alongside every result.
 
 ---
 
@@ -601,14 +668,17 @@ ceiling, a socket subscribing to a workspace it doesn't belong to, and the
 - Per-workspace themes, and engagement nudges that open a how-to guide
 - Full-text search over issues, comments and documents
 - Member management UI and rate limiting on credential endpoints
+- Delete for every entity, confirmed, with board deletes going through the
+  offline queue like any other write
 - Next.js client with optimistic updates
-- 219 tests, CI, linting, typechecking
+- Load harness with measured throughput and fan-out numbers
+- 253 tests, CI, linting, typechecking
 
 **Next**
 
 - File uploads and email delivery (both need an external service)
-- Rate limiting on auth and mutation endpoints
-- Load testing and OpenTelemetry
+- OpenTelemetry traces and metrics
+- Drag-and-drop board, editable issue descriptions, a search results page
 
 See [docs/ROADMAP.md](docs/ROADMAP.md) for the full plan, including an honest
 list of what is thin in what already exists.

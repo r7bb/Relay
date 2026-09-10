@@ -17,6 +17,7 @@
  * Resolving the sort key from the id inside the query avoids the conversion
  * entirely, at the cost of one primary-key lookup per page.
  */
+import { isUuid } from '@relay/shared';
 
 /** Opaque to callers: encoded to signal it should be echoed, not constructed. */
 export function encodeCursor(id: string): string {
@@ -29,10 +30,8 @@ export function decodeCursor(encoded: string | undefined): string | null {
 
   try {
     const id = Buffer.from(encoded, 'base64url').toString('utf8');
-    return UUID_RE.test(id) ? id : null;
+    return isUuid(id) ? id : null;
   } catch {
     return null;
   }
 }
-
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;

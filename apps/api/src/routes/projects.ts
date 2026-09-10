@@ -6,7 +6,7 @@ import {
   projects,
   publishEvent,
 } from '@relay/database';
-import { createProjectSchema, deriveProjectKey, updateProjectSchema } from '@relay/shared';
+import { createProjectSchema, deriveProjectKey, isUuid, updateProjectSchema } from '@relay/shared';
 import { and, count, eq, sql } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
 import { ApiError } from '../errors.ts';
@@ -18,8 +18,6 @@ import {
 } from '../plugins/authz.ts';
 import { parse } from '../validate.ts';
 
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
 /**
  * Load a project, scoped to the workspace from the path.
  *
@@ -28,7 +26,7 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
  * whose `:workspaceId` they legitimately belong to.
  */
 export async function loadProject(db: Executor, workspaceId: string, projectId: string) {
-  if (!UUID_RE.test(projectId)) throw ApiError.notFound('Project not found');
+  if (!isUuid(projectId)) throw ApiError.notFound('Project not found');
 
   const [project] = await db
     .select()

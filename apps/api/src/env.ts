@@ -11,6 +11,21 @@ const envSchema = z.object({
     .default('0')
     .transform((v) => v === '1' || v.toLowerCase() === 'true'),
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
+  /**
+   * Postgres pool size. Every request resolves a session and checks
+   * membership before its own query, so this bounds concurrency well below
+   * what the connection count suggests.
+   */
+  DB_POOL_MAX: z.coerce.number().int().min(1).max(200).default(10),
+  /**
+   * Per-request logging. On by default; the load harness turns it off so the
+   * benchmark measures the server rather than the cost of serializing a log
+   * line per request to a pipe.
+   */
+  API_LOG: z
+    .string()
+    .default('1')
+    .transform((v) => v === '1' || v.toLowerCase() === 'true'),
 });
 
 export type Env = z.infer<typeof envSchema>;

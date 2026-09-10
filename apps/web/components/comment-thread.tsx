@@ -1,8 +1,16 @@
 'use client';
 
+import { splitMentions } from '@relay/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { type FormEvent, useState } from 'react';
 import { api, type Comment, type Me } from '../lib/api.ts';
+import { DeleteButton } from './delete-button.tsx';
+
+/** Comments have no title, so the dialog quotes the opening of the body. */
+function preview(body: string): string {
+  const flat = body.replace(/\s+/g, ' ').trim();
+  return flat.length > 60 ? `“${flat.slice(0, 60)}…”` : `“${flat}”`;
+}
 
 /**
  * Comments on an issue.
@@ -77,15 +85,13 @@ export function CommentThread({
 
                 {/* Own comments only; the API also refuses others unless you
                     are an admin, so this just avoids offering a dead control. */}
-                {me.data?.user.id === comment.authorId && (
-                  <button
-                    type="button"
-                    onClick={() => remove.mutate(comment.id)}
-                    className="text-xs text-faint hover:text-red-400"
-                  >
-                    Delete
-                  </button>
-                )}
+                <DeleteButton
+                  allowed={me.data?.user.id === comment.authorId}
+                  kind="comment"
+                  name={preview(comment.body)}
+                  onConfirm={() => remove.mutateAsync(comment.id)}
+                  className="-my-1"
+                />
               </span>
             </div>
 
@@ -128,7 +134,7 @@ export function CommentThread({
       )}
 
       {post.isError && (
-        <p role="alert" className="mt-2 text-sm text-red-400">
+        <p role="alert" className="mt-2 text-sm text-danger-soft">
           {(post.error as Error).message}
         </p>
       )}
@@ -136,22 +142,23 @@ export function CommentThread({
   );
 }
 
-/** Highlight `@handle` so a mention is visible in the rendered comment. */
+/**
+ * Highlight `@handle` so a mention is visible in the rendered comment.
+ *
+ * The split comes from `@relay/shared` rather than a regex here, so what gets
+ * highlighted is exactly what gets notified.
+ */
 function Mentions({ text }: { text: string }) {
-  // Same shape as the server-side parser: the `@` must start a word and must
-  // not follow the tail of an email address.
-  const parts = text.split(/((?:^|(?<![\w@.-]))@[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?)/gi);
-
   return (
     <>
-      {parts.map((part, index) =>
-        part.startsWith('@') ? (
+      {splitMentions(text).map((segment, index) =>
+        segment.handle ? (
           // biome-ignore lint/suspicious/noArrayIndexKey: split output is positional and re-rendered wholesale, so the index is the only identity available.
           <span key={index} className="rounded bg-accent/15 px-1 text-accent-soft">
-            {part}
+            {segment.text}
           </span>
         ) : (
-          part
+          segment.text
         ),
       )}
     </>

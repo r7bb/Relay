@@ -71,6 +71,11 @@ export function NotificationBell() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['notifications'] }),
   });
 
+  const dismiss = useMutation({
+    mutationFn: (id: string) => api<void>(`/notifications/${id}`, { method: 'DELETE' }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['notifications'] }),
+  });
+
   const markAllRead = useMutation({
     mutationFn: () => api<void>('/notifications/read-all', { method: 'POST' }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['notifications'] }),
@@ -141,14 +146,17 @@ export function NotificationBell() {
           ) : (
             <ul className="max-h-96 divide-y divide-line overflow-y-auto">
               {items.map((item) => (
-                <li key={item.id} className={item.readAt ? 'opacity-60' : undefined}>
+                <li
+                  key={item.id}
+                  className={`flex items-start hover:bg-surface ${item.readAt ? 'opacity-60' : ''}`}
+                >
                   <Link
                     href={hrefFor(item)}
                     onClick={() => {
                       if (!item.readAt) markRead.mutate(item.id);
                       setOpen(false);
                     }}
-                    className="block px-4 py-3 hover:bg-surface"
+                    className="min-w-0 flex-1 px-4 py-3"
                   >
                     <div className="flex items-baseline justify-between gap-2">
                       <span className="text-sm text-content">{headlineFor(item)}</span>
@@ -165,6 +173,29 @@ export function NotificationBell() {
                       <p className="mt-1 line-clamp-2 text-xs text-faint">{bodyFor(item)}</p>
                     )}
                   </Link>
+
+                  {/* No confirmation here: dismissing an inbox entry destroys
+                      nothing, and a modal per notification would be worse than
+                      the mistake it prevents. */}
+                  <button
+                    type="button"
+                    onClick={() => dismiss.mutate(item.id)}
+                    aria-label="Dismiss notification"
+                    title="Dismiss"
+                    className="mr-2 mt-2.5 shrink-0 rounded p-1.5 text-faint transition hover:bg-danger/10 hover:text-danger-soft"
+                  >
+                    <svg
+                      viewBox="0 0 16 16"
+                      aria-hidden="true"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="1.5"
+                      strokeLinecap="round"
+                      className="h-3.5 w-3.5"
+                    >
+                      <path d="M4 4l8 8M12 4l-8 8" />
+                    </svg>
+                  </button>
                 </li>
               ))}
             </ul>

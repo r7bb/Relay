@@ -263,3 +263,95 @@ describe('delivery through the queue', () => {
     expect(item.payload.body).toBeTruthy();
   });
 });
+
+/**
+ * Dismissing an inbox entry.
+ *
+ * A hard delete rather than a `dismissedAt` column, and the last test here is
+ * why: the unique index on `(user_id, dedupe_key)` is what stops the worker
+ * re-sending a nudge, so a dismissed row that stayed in the table would
+ * suppress that nudge forever.
+ */
+describe('dismissing a notification', () => {
+  async function nudgeFor_(actor: Actor) {
+    await scanNudges(await harnessDb());
+    const inbox = await inboxOf(actor);
+    return inbox.notifications[0] as { id: string };
+  }
+
+  async function harnessDb() {
+    return (await getHarness()).db;
+  }
+
+  test('removes it from the inbox', async () => {
+    const actor = await createActor('Dismisser');
+    const notification = await nudgeFor_(actor);
+
+    const response = await request(`/notifications/${notification.id}`, {
+      method: 'DELETE',
+      actor,
+    });
+
+    expect(response.statusCode).toBe(204);
+    expect((await inboxOf(actor)).notifications).toHaveLength(0);
+  });
+
+  test('someone else cannot dismiss your notification', async () => {
+    const owner = await createActor('Owner');
+    const stranger = await createActor('Stranger');
+    const notification = await nudgeFor_(owner);
+
+    const response = await request(`/notifications/${notification.id}`, {
+      method: 'DELETE',
+      actor: stranger,
+    });
+
+    // 404 rather than 403: an id you may not touch should not be confirmed.
+    expect(response.statusCode).toBe(404);
+    expect((await inboxOf(owner)).notifications).toHaveLength(1);
+  });
+
+  test('a malformed id is a 404 rather than a 500', async () => {
+    const actor = await createActor('Dismisser');
+
+    const response = await request('/notifications/not-a-uuid', { method: 'DELETE', actor });
+    expect(response.statusCode).toBe(404);
+  });
+
+  test('dismissing twice is a 404 the second time', async () => {
+    const actor = await createActor('Dismisser');
+    const notification = await nudgeFor_(actor);
+
+    const path = `/notifications/${notification.id}`;
+    expect((await request(path, { method: 'DELETE', actor })).statusCode).toBe(204);
+    expect((await request(path, { method: 'DELETE', actor })).statusCode).toBe(404);
+  });
+
+  /**
+   * The reason dismissal deletes the row instead of flagging it. Within the
+   * same week the dedupe key still applies -- dismissing is not a licence to
+   * re-send immediately -- but the row is gone, so the key is free again.
+   */
+  test('dismissing frees the dedupe key so the nudge can return', async () => {
+    const actor = await createActor('Dismisser');
+    const db = await harnessDb();
+
+    await scanNudges(db);
+    const first = (await inboxOf(actor)).notifications[0];
+    expect(first).toBeDefined();
+
+    await request(`/notifications/${first.id}`, { method: 'DELETE', actor });
+
+    const remaining = await db
+      .select({ id: notifications.id })
+      .from(notifications)
+      .where(eq(notifications.userId, actor.id));
+
+    // Nothing left holding the key.
+    expect(remaining).toEqual([]);
+
+    // So the same scan can raise it again rather than being blocked forever.
+    await scanNudges(db);
+    expect((await inboxOf(actor)).notifications).toHaveLength(1);
+  });
+});

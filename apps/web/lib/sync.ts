@@ -46,6 +46,14 @@ const transport: SyncTransport = {
     }
   },
 
+  async deleteIssue(workspaceId, issueId) {
+    try {
+      await api<void>(`/workspaces/${workspaceId}/issues/${issueId}`, { method: 'DELETE' });
+    } catch (error) {
+      throw toSyncError(error);
+    }
+  },
+
   async listIssues(workspaceId, projectId) {
     try {
       return await api<{ issues: LocalIssue[] }>(

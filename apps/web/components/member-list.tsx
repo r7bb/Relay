@@ -4,6 +4,7 @@ import { ROLES, type Role, rankOf } from '@relay/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { type FormEvent, useState } from 'react';
 import { api, type Me, type Member } from '../lib/api.ts';
+import { DeleteButton } from './delete-button.tsx';
 import { RoleBadge } from './ui.tsx';
 
 /**
@@ -118,7 +119,7 @@ export function MemberList({
       )}
 
       {error && (
-        <p role="alert" className="mt-2 text-sm text-red-400">
+        <p role="alert" className="mt-2 text-sm text-danger-soft">
           {(error as Error).message}
         </p>
       )}
@@ -163,15 +164,14 @@ export function MemberList({
                   <RoleBadge role={member.role} />
                 )}
 
-                {editable && (
-                  <button
-                    type="button"
-                    onClick={() => remove.mutate(member.userId)}
-                    className="text-xs text-faint hover:text-red-400"
-                  >
-                    Remove
-                  </button>
-                )}
+                <DeleteButton
+                  allowed={editable}
+                  kind="member"
+                  name={member.name}
+                  cascade="They lose access to this workspace immediately. Their issues and comments stay."
+                  onConfirm={() => remove.mutateAsync(member.userId)}
+                  className="-my-1"
+                />
               </span>
             </li>
           );

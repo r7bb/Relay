@@ -16,7 +16,7 @@
     "dev:api": "bun --watch apps/api/src/main.ts",
     "dev:web": "bun --filter '@relay/web' dev",
     "test": "bun test",
-    "typecheck": "tsc --noEmit -p packages/shared && tsc --noEmit -p packages/auth && tsc --noEmit -p packages/database && tsc --noEmit -p packages/sync && tsc --noEmit -p apps/api && tsc --noEmit -p apps/realtime && tsc --noEmit -p apps/worker",
+    "typecheck": "tsc --noEmit -p packages/shared && tsc --noEmit -p packages/auth && tsc --noEmit -p packages/database && tsc --noEmit -p packages/sync && tsc --noEmit -p apps/api && tsc --noEmit -p apps/realtime && tsc --noEmit -p apps/worker && tsc --noEmit -p tsconfig.scripts.json && tsc --noEmit -p apps/web",
     "start:api": "bun apps/api/src/main.ts",
     "grant:owner": "bun run scripts/grant-owner.ts",
     "dev:realtime": "bun --watch apps/realtime/src/main.ts",
@@ -24,7 +24,8 @@
     "lint:fix": "biome check --write .",
     "format": "biome format --write .",
     "dev:worker": "bun --watch apps/worker/src/main.ts",
-    "db:migrate": "bun run scripts/migrate.ts"
+    "db:migrate": "bun run scripts/migrate.ts",
+    "loadtest": "bun run scripts/loadtest.ts"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.12",

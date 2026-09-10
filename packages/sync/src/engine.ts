@@ -42,6 +42,9 @@ export interface SyncTransport {
     idempotencyKey: string,
   ): Promise<{ issue: LocalIssue }>;
 
+  /** Naturally idempotent, so it takes no idempotency key. */
+  deleteIssue(workspaceId: string, issueId: string): Promise<void>;
+
   listIssues(workspaceId: string, projectId: string): Promise<{ issues: LocalIssue[] }>;
 }
 
@@ -168,6 +171,42 @@ export class SyncEngine {
     return updated;
   }
 
+  /**
+   * Delete an issue locally and queue the deletion.
+   *
+   * Two subtleties, both about an issue that was created offline and deleted
+   * before it ever synced:
+   *
+   * A queued create for the same issue is removed -- but a delete is still
+   * queued rather than treating the pair as a no-op. Cancelling both looks
+   * tempting and is racy: the create may already be in flight, in which case
+   * the row would land on the server with nothing left to remove it, and the
+   * next reconcile would resurrect a row the user deleted. Queuing the delete
+   * converges either way, at the cost of one request that may 404 -- and a
+   * 404 on a delete means the desired state already holds.
+   *
+   * Queued edits for the row are dropped outright: they describe a row that
+   * is going away, and flushing them first would be work the server undoes.
+   */
+  async deleteIssue(workspaceId: string, issueId: string): Promise<void> {
+    const existing = await this.storage.get<LocalIssue>(STORE_ISSUES, issueId);
+    if (!existing) return;
+
+    await this.storage.delete(STORE_ISSUES, issueId);
+
+    await this.queue.remove(`update:${issueId}`);
+    await this.queue.remove(issueId);
+
+    await this.queue.enqueue({
+      kind: 'issue.delete',
+      id: `delete:${issueId}`,
+      workspaceId,
+      issueId,
+      queuedAt: this.now(),
+      attempts: 0,
+    });
+  }
+
   /** Merge with any update already queued for this issue. */
   private async pendingUpdateInput(issueId: string) {
     const queued = await this.queue.all();
@@ -225,6 +264,19 @@ export class SyncEngine {
       return;
     }
 
+    if (mutation.kind === 'issue.delete') {
+      try {
+        await this.transport.deleteIssue(mutation.workspaceId, mutation.issueId);
+      } catch (error) {
+        // The row is already gone -- someone else deleted it, or our own
+        // create never reached the server. Either way the intent is satisfied,
+        // so this is success rather than a mutation to discard.
+        if (error instanceof SyncError && error.status === 404) return;
+        throw error;
+      }
+      return;
+    }
+
     const { issue } = await this.transport.updateIssue(
       mutation.workspaceId,
       mutation.issueId,
@@ -241,7 +293,9 @@ export class SyncEngine {
       await this.storage.delete(STORE_ISSUES, mutation.id);
     }
     // A refused update is repaired by the next reconcile, which overwrites the
-    // local row with the server's version.
+    // local row with the server's version. So is a refused delete -- the row
+    // is still on the server, and reconcile puts it back on screen, which is
+    // the honest outcome when the server says you may not remove it.
   }
 
   // ------------------------------------------------------------- reconcile

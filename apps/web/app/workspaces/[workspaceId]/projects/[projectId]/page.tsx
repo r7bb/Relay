@@ -1,10 +1,11 @@
 'use client';
 
-import { BOARD_COLUMNS, type IssueStatus } from '@relay/shared';
+import { BOARD_COLUMNS, can, type IssueStatus } from '@relay/shared';
 import { useQuery } from '@tanstack/react-query';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { type FormEvent, useEffect, useState } from 'react';
+import { DeleteButton } from '../../../../../components/delete-button.tsx';
 import { PresenceBar } from '../../../../../components/presence.tsx';
 import { SyncStatus } from '../../../../../components/sync-status.tsx';
 import { ErrorState } from '../../../../../components/ui.tsx';
@@ -61,6 +62,7 @@ export default function BoardPage() {
 
   const role = workspace.data?.workspace.role;
   const canEdit = role !== undefined && role !== 'GUEST';
+  const canDelete = role !== undefined && can(role, 'issue:delete');
 
   return (
     <main className="mx-auto max-w-6xl px-6 py-12">
@@ -121,6 +123,16 @@ export default function BoardPage() {
                   >
                     <div className="flex items-baseline justify-between gap-2">
                       <span className="font-mono text-[10px] text-faint">{issue.key}</span>
+
+                      {/* Deleting goes through the same offline queue as every
+                          other board write, so it works with no connection. */}
+                      <DeleteButton
+                        allowed={canDelete}
+                        kind="issue"
+                        name={issue.pending ? issue.title : `${issue.key} · ${issue.title}`}
+                        onConfirm={() => board.deleteIssue(issue.id)}
+                        className="-my-1 -mr-1 order-last"
+                      />
 
                       {issue.pending ? (
                         <span

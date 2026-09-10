@@ -2,7 +2,7 @@
 
 Where Relay is, what is left, and what is deliberately not being built.
 
-Status as of the current commit: **219 tests, lint and typecheck clean, CI green.**
+Status as of the current commit: **253 tests, lint and typecheck clean, CI green.**
 
 ---
 
@@ -41,6 +41,19 @@ Status as of the current commit: **219 tests, lint and typecheck clean, CI green
   reconciliation that preserves unflushed local work
 - Exactly-once mutations: client-generated ids plus a server idempotency ledger
 - Poison-message handling — permanent refusals are dropped, 408/429 are not
+
+### Deleting things
+
+- [x] Trash control on every entity — workspace, project, issue, document,
+      comment, membership, notification — behind a confirmation that names
+      what cascades
+- [x] Board deletes go through the offline mutation queue, so removing an
+      issue works with no connection. Deleting an issue whose create has not
+      synced still queues the delete rather than cancelling the pair: the
+      create may already be in flight, and a 404 on the delete means the
+      desired state already holds
+- [x] Controls resolve against the same `can(role, permission)` matrix the API
+      enforces, so a hidden button and a refused request agree
 
 ### Presentation and onboarding
 
@@ -83,7 +96,7 @@ last-write-wins per field; concurrent edits to the *same paragraph* do not.
       timeout, and enqueue that joins the caller's transaction
 - [x] `@mention` parsing and in-app notifications, delivered by a worker
 - [x] Session cleanup as a self-rescheduling job
-- [x] Notification inbox UI with unread counts and mark-read
+- [x] Notification inbox UI with unread counts, mark-read and dismiss
 - [ ] Email delivery (needs an SMTP target)
 - [ ] File attachments via presigned URLs (needs an S3-compatible target)
 - [x] Search — Postgres full-text over issues, comments and documents, on
@@ -96,8 +109,10 @@ last-write-wins per field; concurrent edits to the *same paragraph* do not.
 ### 8 · Operations
 
 - [ ] OpenTelemetry traces and metrics
-- [ ] k6 load test: WebSocket fan-out and sync throughput under concurrency,
-      with real numbers in the README rather than invented ones
+- [x] Load test of WebSocket fan-out and API throughput under concurrency, with
+      the measured numbers in the README. Bun rather than k6, which ships as a
+      Go binary this machine cannot install; the harness reports its own
+      event-loop lag so a reader can tell the generator from the server
 - [ ] Deployment
 
 ---
@@ -118,7 +133,9 @@ Honest list of things that are built but thin.
   with no pagination or filtering by kind.
 - **No password reset or email verification** — both need the mailer from
   milestone 6.
-- **No load-test numbers yet.** The README describes behaviour, not throughput.
+- **Load-test numbers are laptop numbers.** One machine, loopback networking,
+  local Postgres. Good for comparing commits against each other; not a capacity
+  plan, and the README says so.
 
 ---
 

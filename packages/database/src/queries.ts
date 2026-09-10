@@ -1,9 +1,7 @@
-import type { Role } from '@relay/shared';
+import { isUuid, type Role } from '@relay/shared';
 import { and, eq } from 'drizzle-orm';
 import type { Executor } from './index.ts';
 import { workspaceMembers } from './schema.ts';
-
-export const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /**
  * The membership lookup behind every authorization decision.
@@ -20,7 +18,7 @@ export async function findMembership(
   workspaceId: string,
   userId: string,
 ): Promise<{ role: Role } | null> {
-  if (!UUID_RE.test(workspaceId)) return null;
+  if (!isUuid(workspaceId)) return null;
 
   const [member] = await db
     .select({ role: workspaceMembers.role })

@@ -5,7 +5,7 @@ import {
   loadDocument,
   publishEvent,
 } from '@relay/database';
-import { createDocumentSchema, updateDocumentSchema } from '@relay/shared';
+import { createDocumentSchema, isUuid, updateDocumentSchema } from '@relay/shared';
 import { and, desc, eq } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
 import { ApiError } from '../errors.ts';
@@ -16,8 +16,6 @@ import {
   requireMembership,
 } from '../plugins/authz.ts';
 import { parse } from '../validate.ts';
-
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /**
  * REST surface for documents: create, list, rename, delete, and a read-only
@@ -140,7 +138,7 @@ export async function documentRoutes(app: FastifyInstance, opts: { db: Database 
 
   /** Tenant-scoped metadata lookup. See the note on `loadProject`. */
   async function loadMeta(workspaceId: string, documentId: string) {
-    if (!UUID_RE.test(documentId)) throw ApiError.notFound('Document not found');
+    if (!isUuid(documentId)) throw ApiError.notFound('Document not found');
 
     const [document] = await db
       .select({
