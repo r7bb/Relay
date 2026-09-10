@@ -138,7 +138,18 @@ export default function BoardPage() {
                       )}
                     </div>
 
-                    <p className="mt-1 text-sm text-slate-200">{issue.title}</p>
+                    {/* Offline-created issues have no server row yet, so
+                        there is nothing to open until they sync. */}
+                    {issue.pending ? (
+                      <p className="mt-1 text-sm text-slate-200">{issue.title}</p>
+                    ) : (
+                      <Link
+                        href={`/workspaces/${workspaceId}/issues/${issue.id}`}
+                        className="mt-1 block text-sm text-slate-200 hover:text-white hover:underline"
+                      >
+                        {issue.title}
+                      </Link>
+                    )}
 
                     {issue.assigneeName && (
                       <p className="mt-2 text-xs text-slate-500">{issue.assigneeName}</p>

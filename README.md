@@ -27,7 +27,7 @@ cp .env.example .env
 
 ```bash
 bun run db:start     # provisions + starts Postgres on :5433
-bun run db:push      # applies the schema
+bun run db:migrate   # applies the migration files
 bun run db:seed      # 1 account, 2 projects, 10 issues
 ```
 
@@ -74,6 +74,18 @@ propagation is immediate rather than waiting on a poll.
 
 The presence bar counts distinct people, not tabs, so two windows signed in as
 the same account correctly read `1 online`.
+
+### Issues, comments and mentions
+
+Click a card to open the issue: status, priority and assignee are editable
+inline, and the title edits in place.
+
+![Issue detail](docs/screenshots/10-issue-detail.png)
+
+`@handle` in a comment resolves against workspace members and produces a
+notification, delivered by the background worker rather than inline.
+
+![Notification inbox](docs/screenshots/11-notification-inbox.png)
 
 ### Collaborative documents
 
@@ -143,7 +155,8 @@ seeded.
 | `bun run db:start`      | Provision and start the local Postgres        |
 | `bun run db:stop`       | Stop it, keeping data                         |
 | `bun run db:reset`      | Destroy the data directory and re-provision   |
-| `bun run db:push`       | Sync the schema (development)                 |
+| `bun run db:migrate`    | Apply the migration files                     |
+| `bun run db:push`       | Diff the schema straight on (fast iteration)  |
 | `bun run db:seed`       | Load demo data (one account)                  |
 | `bun run db:seed --team`| Add an admin, member and guest for role demos |
 | `bun run grant:owner`   | Make an account OWNER of every workspace      |
@@ -407,6 +420,18 @@ What Postgres does not give: this polls rather than blocking on a socket, and
 throughput is bounded by the database. Those are the numbers to watch before
 reaching for a broker.
 
+### Development runs migrations, not `push`
+
+`drizzle-kit push` diffs the schema straight onto the database, which is
+convenient while iterating and dangerous as a default: it means development
+executes SQL that CI and the tests never run.
+
+That divergence hid a real bug. A unique index existed in the migration and in
+`schema.ts`, the tests applied the migration and passed, and a pushed dev
+database was missing it — so the mention handler failed on `ON CONFLICT` in
+dev while every test stayed green. `bun run db:migrate` is now the documented
+path, so all three environments execute the same statements.
+
 ### Sessions are opaque, not JWTs
 
 Session lookup costs one indexed read per request. In exchange, signing out
@@ -469,12 +494,13 @@ ceiling, a socket subscribing to a workspace it doesn't belong to, and the
 - Service worker so the app shell loads with no network
 - CRDT documents (Yjs) with live cursors, stored as an append-only update log
 - Background job queue on Postgres `SKIP LOCKED`, with `@mention` notifications
+- Issue detail pages, comment threads, and a notification inbox
 - Next.js client with optimistic updates
 - 154 tests, CI, linting, typechecking
 
 **Next**
 
-- Notification UI, search, file uploads
+- Member management UI, search, file uploads
 - Rate limiting on auth and mutation endpoints
 - Load testing and OpenTelemetry
 

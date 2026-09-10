@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { type FormEvent, useEffect, useState } from 'react';
+import { NotificationBell } from '../../components/notification-bell.tsx';
 import { RoleBadge } from '../../components/ui.tsx';
 import { api, type Me, type WorkspaceSummary } from '../../lib/api.ts';
 
@@ -70,13 +71,17 @@ export default function WorkspacesPage() {
           )}
         </div>
 
-        <button
-          type="button"
-          onClick={() => signOut.mutate()}
-          className="text-sm text-slate-400 hover:text-slate-200"
-        >
-          Sign out
-        </button>
+        <div className="flex items-center gap-4">
+          <NotificationBell />
+
+          <button
+            type="button"
+            onClick={() => signOut.mutate()}
+            className="text-sm text-slate-400 hover:text-slate-200"
+          >
+            Sign out
+          </button>
+        </div>
       </header>
 
       <form onSubmit={onCreate} className="mt-8 flex gap-2">

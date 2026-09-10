@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { type FormEvent, useState } from 'react';
+import { NotificationBell } from '../../../components/notification-bell.tsx';
 import { PresenceBar } from '../../../components/presence.tsx';
 import { ErrorState, RoleBadge } from '../../../components/ui.tsx';
 import {
@@ -102,7 +103,10 @@ export default function WorkspacePage() {
           {role && <RoleBadge role={role} />}
         </div>
 
-        <PresenceBar users={presence} state={realtimeState} />
+        <div className="flex items-center gap-4">
+          <PresenceBar users={presence} state={realtimeState} />
+          <NotificationBell />
+        </div>
       </header>
 
       {canCreateProject && (

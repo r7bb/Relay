@@ -89,3 +89,43 @@ export type DocumentSummary = {
   projectId: string | null;
   updatedAt: string;
 };
+
+export type IssueDetail = {
+  id: string;
+  key: string;
+  number: number;
+  projectId: string;
+  title: string;
+  description: string | null;
+  status: IssueStatus;
+  priority: IssuePriority;
+  assigneeId: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type Comment = {
+  id: string;
+  body: string;
+  createdAt: string;
+  authorId: string;
+  authorName: string;
+};
+
+export type NotificationItem = {
+  id: string;
+  kind: string;
+  workspaceId: string;
+  entityType: string;
+  entityId: string;
+  payload: {
+    issueId?: string;
+    issueKey?: string | null;
+    issueTitle?: string | null;
+    excerpt?: string;
+  };
+  readAt: string | null;
+  createdAt: string;
+  actorId: string | null;
+  actorName: string | null;
+};

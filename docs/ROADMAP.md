@@ -74,7 +74,7 @@ last-write-wins per field; concurrent edits to the *same paragraph* do not.
       timeout, and enqueue that joins the caller's transaction
 - [x] `@mention` parsing and in-app notifications, delivered by a worker
 - [x] Session cleanup as a self-rescheduling job
-- [ ] Notification UI — the API and worker are done, nothing renders the inbox
+- [x] Notification inbox UI with unread counts and mark-read
 - [ ] Email delivery (needs an SMTP target)
 - [ ] File attachments via presigned URLs (needs an S3-compatible target)
 - [ ] Search — Postgres full-text first, with a documented comparison against
@@ -97,19 +97,15 @@ last-write-wins per field; concurrent edits to the *same paragraph* do not.
 
 Honest list of things that are built but thin.
 
-- **No issue detail page.** Issues are only viewable as board cards; there is no
-  route for a single issue.
-- **Comments have no UI.** The API, permissions and realtime events are done and
-  tested; nothing renders them.
-- **Notifications have no UI.** Same shape: queue, worker, inbox API and tests
-  all exist, but nothing displays them.
 - **Board uses a status dropdown, not drag-and-drop.**
 - **Offline covers the board only.** The app shell is cached, but other routes
   still fetch their data and will show the offline fallback if visited cold.
 - **The document editor is a plain textarea.** No formatting, and remote
   cursors are listed by name rather than drawn inline.
 - **Members cannot be managed from the UI.** Invite, role change and removal are
-  API-only.
+  API-only — the last backend with no front end.
+- **Issue descriptions are not editable.** The field exists and the API accepts
+  it; the detail page shows status, priority and assignee only.
 - **No password reset or email verification** — both need the mailer from
   milestone 6.
 - **Issue list pagination is offset-based.** Fine at this size, but it will skip
